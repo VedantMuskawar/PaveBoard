@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { db, auth } from "../config/firebase";
 import {
@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 import DMButtons from "../components/DMButtons";
 import { generateDeliveryMemo, cancelDeliveryMemo } from "../components/DeliveryMemo";
+import { cacheUtils } from "../utils/cacheManager";
 import "./ScheduledOrdersDashboard.css";
 
 // --- Local date helpers (avoid UTC shift) ---
@@ -39,6 +40,12 @@ export default function ScheduledOrdersDashboard() {
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState({ orders: 0, qty: 0, total: 0 });
   const navigate = useNavigate();
+
+  // Memoize organization ID for caching
+  const orgId = useMemo(() => {
+    const user = auth.currentUser;
+    return user?.uid || null;
+  }, [auth.currentUser]);
 
   const [headerCondensed, setHeaderCondensed] = useState(false);
 
@@ -102,32 +109,47 @@ export default function ScheduledOrdersDashboard() {
     setSelectedDate(ymdLocal(today));
   }, []);
 
+// Optimized orders fetching with intelligent caching
+const fetchOrdersWithCache = useCallback(async (date) => {
+  if (!date || !orgId) return [];
+  
+  const cacheKey = `orders_${orgId}_${date}`;
+  
+  try {
+    const result = await cacheUtils.smartFetchOrders(cacheKey, async () => {
+      const start = parseYMDLocal(date);
+      const end = new Date(start);
+      end.setHours(23, 59, 59, 999);
+
+      const q = query(
+        collection(db, "SCH_ORDERS"),
+        where("orgID", "==", orgId),
+        where("deliveryDate", ">=", start),
+        where("deliveryDate", "<=", end),
+        orderBy("deliveryDate", "desc"),
+        limit(100)
+      );
+
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => ({ ...doc.data(), docID: doc.id }));
+    });
+    
+    return result.data;
+  } catch (error) {
+    console.error("Failed to fetch orders:", error);
+    return [];
+  }
+}, [orgId]);
+
 useEffect(() => {
   if (!selectedDate) return;
-  const start = parseYMDLocal(selectedDate);
-  const end = new Date(start);
-  end.setHours(23, 59, 59, 999);
-
-  const q = query(
-    collection(db, "SCH_ORDERS"),
-    where("orgID", "==", orgID),
-    where("deliveryDate", ">=", start),
-    where("deliveryDate", "<=", end),
-    orderBy("deliveryDate", "desc"),
-    limit(100)
-  );
-
-  const unsub = onSnapshot(q, (snap) => {
-    const ordersData = snap.docs.map(doc => ({ ...doc.data(), docID: doc.id }));
+  
+  setLoading(true);
+  fetchOrdersWithCache(selectedDate).then(ordersData => {
     setOrders(ordersData);
-    setLoading(false); // Remove the 600ms delay
-  }, (error) => {
-    console.error("Failed to fetch SCH_ORDERS:", error);
     setLoading(false);
   });
-
-  return () => unsub();
-}, [selectedDate]);
+}, [selectedDate, fetchOrdersWithCache]);
 
   const formatDateKey = (ts) => ymdLocal(ts.toDate());
 
@@ -148,14 +170,27 @@ useEffect(() => {
 
   const vehicles = [...new Set(orders.filter(o => formatDateKey(o.deliveryDate) === selectedDate).map(o => o.vehicleNumber).filter(Boolean))];
 
-  useEffect(() => {
-    if (!selectedDate) return;
-    // Compute from the same filtered list used for the UI
+  // Memoize summary calculation to prevent unnecessary recalculations
+  const summaryData = useMemo(() => {
+    if (!selectedDate) return { orders: 0, qty: 0, total: 0 };
+    
+    const filteredOrders = orders.filter(o => {
+      const orderDate = formatDateKey(o.deliveryDate);
+      const matchesDate = orderDate === selectedDate;
+      const matchesVehicle = !selectedVehicle || o.vehicleNumber === selectedVehicle;
+      return matchesDate && matchesVehicle;
+    });
+    
     const count = filteredOrders.length;
     const qty = filteredOrders.reduce((acc, o) => acc + (o.productQuant || 0), 0);
     const total = filteredOrders.reduce((acc, o) => acc + ((o.productQuant || 0) * (o.productUnitPrice || 0)), 0);
-    setSummary({ orders: count, qty, total });
+    
+    return { orders: count, qty, total };
   }, [orders, selectedDate, selectedVehicle]);
+
+  useEffect(() => {
+    setSummary(summaryData);
+  }, [summaryData]);
 
   // Deduplicate orders by clientName, vehicleNumber, and deliveryDate before rendering
   const uniqueOrdersMap = new Map();

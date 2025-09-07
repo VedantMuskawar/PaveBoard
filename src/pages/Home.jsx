@@ -1,4 +1,4 @@
-import { useEffect, useState, Suspense, lazy, useMemo, useCallback } from "react";
+import { useEffect, useState, Suspense, lazy, useMemo, useCallback, useRef } from "react";
 import { auth } from "../config/firebase";
 import { useNavigate } from "react-router-dom";
 import { useOrganization } from "../contexts/OrganizationContext";
@@ -50,6 +50,70 @@ function Home() {
   const [pageVisibility, setPageVisibility] = useState({});
   const [sectionVisibility, setSectionVisibility] = useState({});
   const [currentView, setCurrentView] = useState("home"); // "home", "dashboard", "orders-dashboard", "diesel-ledger", "production-entry", "vehicle-labour-entry", "vehicle-labour-ledger", "labour-management", "client-ledger", "income-ledger", "expense-management", "cash-ledger", "vendor-management", "procurement-entry", "procurement-report", "vehicle-management", "vehicle-wages", or "scheduled-orders"
+
+  // Memoize sections array to prevent recreation on every render
+  const sections = useMemo(() => [
+    {
+      label: "📦 Order Management",
+      items: [
+        { emoji: "📋", title: "Orders Dashboard", path: "/home/orders" },
+        { emoji: "⛽", title: "Diesel Ledger", path: "/home/diesel-ledger" },
+        { emoji: "📅", title: "Scheduled Orders", path: "/home/scheduled-orders" },
+      ]
+    },
+    {
+      label: "🏭 Production & Labour",
+      items: [
+        { emoji: "⚡", title: "Production Entry", path: "/home/production-entry" },
+        { emoji: "👷‍♂️", title: "Vehicle Labour Entry", path: "/home/v-labour-entry" },
+        { emoji: "📊", title: "Vehicle Labour Ledger", path: "/home/v-labour-ledger" },
+        { emoji: "👥", title: "Labour Management", path: "/home/manage-labour" },
+      ]
+    },
+    {
+      label: "💼 Financial Management",
+      items: [
+        { emoji: "📊", title: "Client Ledger", path: "/home/client-ledger" },
+        { emoji: "📈", title: "Income Ledger", path: "/home/income-ledger" },
+        { emoji: "💸", title: "Expense Management", path: "/home/raw-material-entry" },
+        { emoji: "💳", title: "Cash Ledger", path: "/home/cash-ledger" }
+      ]
+    },
+    {
+      label: "🚗 Vehicle Operations",
+      items: [
+        { emoji: "🚛", title: "Vehicle Management", path: "/home/manage-vehicle" },
+        { emoji: "💰", title: "Vehicle Wages", path: "/home/vehicle-wages" }
+      ]
+    },
+    {
+      label: "🏢 Procurement Management",
+      items: [
+        { emoji: "🏢", title: "Vendor Management", path: "/home/vendor-management" },
+        { emoji: "📝", title: "Procurement Entry", path: "/home/procurement-entry" },
+        { emoji: "📊", title: "Procurement Reports", path: "/home/procurement-report" }
+      ]
+    }
+  ], []);
+
+  // Debounced localStorage operations to prevent excessive writes
+  const debouncedSaveSettings = useCallback(
+    (() => {
+      let timeoutId;
+      return (pageVisibility, sectionVisibility) => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          try {
+            localStorage.setItem('adminPageVisibility', JSON.stringify(pageVisibility));
+            localStorage.setItem('adminSectionVisibility', JSON.stringify(sectionVisibility));
+          } catch (error) {
+            console.error('Failed to save settings to localStorage:', error);
+          }
+        }, 300);
+      };
+    })(),
+    []
+  );
   
   // Debug currentView changes
   useEffect(() => {
@@ -82,32 +146,44 @@ function Home() {
     }
   }, [navigate, selectedOrg, orgLoading]);
 
-  // Initialize page visibility state
-  useEffect(() => {
-    if (selectedOrg) {
-      // Load saved settings from localStorage
+  // Memoize localStorage reads to prevent excessive reads
+  const savedSettings = useMemo(() => {
+    if (!selectedOrg) return { pageVisibility: {}, sectionVisibility: {} };
+    
+    try {
       const savedPageVisibility = localStorage.getItem('adminPageVisibility');
       const savedSectionVisibility = localStorage.getItem('adminSectionVisibility');
       
+      return {
+        pageVisibility: savedPageVisibility ? JSON.parse(savedPageVisibility) : {},
+        sectionVisibility: savedSectionVisibility ? JSON.parse(savedSectionVisibility) : {}
+      };
+    } catch (error) {
+      console.error('Failed to parse saved settings:', error);
+      return { pageVisibility: {}, sectionVisibility: {} };
+    }
+  }, [selectedOrg]);
+
+  // Initialize page visibility state
+  useEffect(() => {
+    if (selectedOrg) {
       const initialSectionVisibility = {};
       const initialPageVisibility = {};
       
       sections.forEach((section, sectionIndex) => {
         // Use saved setting or default to true
-        initialSectionVisibility[sectionIndex] = savedSectionVisibility ? 
-          JSON.parse(savedSectionVisibility)[sectionIndex] !== false : true;
+        initialSectionVisibility[sectionIndex] = savedSettings.sectionVisibility[sectionIndex] !== false;
         
         section.items.forEach((item, itemIndex) => {
           // Use saved setting or default to true
-          initialPageVisibility[`${sectionIndex}-${itemIndex}`] = savedPageVisibility ? 
-            JSON.parse(savedPageVisibility)[`${sectionIndex}-${itemIndex}`] !== false : true;
+          initialPageVisibility[`${sectionIndex}-${itemIndex}`] = savedSettings.pageVisibility[`${sectionIndex}-${itemIndex}`] !== false;
         });
       });
       
       setSectionVisibility(initialSectionVisibility);
       setPageVisibility(initialPageVisibility);
     }
-  }, [selectedOrg]);
+  }, [selectedOrg, sections, savedSettings]);
 
 
 
@@ -1070,51 +1146,5 @@ function DashboardCard({ emoji, title, onClick, path, adminUnlocked, navigate, s
     </div>
   );
 }
-
-const sections = [
-  {
-    label: "📦 Order Management",
-    items: [
-      { emoji: "📋", title: "Orders Dashboard", path: "/home/orders" },
-      { emoji: "⛽", title: "Diesel Ledger", path: "/home/diesel-ledger" },
-      { emoji: "📅", title: "Scheduled Orders", path: "/home/scheduled-orders" },
-    ]
-  },
-  {
-    label: "🏭 Production & Labour",
-    items: [
-      { emoji: "⚡", title: "Production Entry", path: "/home/production-entry" },
-      { emoji: "👷‍♂️", title: "Vehicle Labour Entry", path: "/home/v-labour-entry" },
-      { emoji: "📊", title: "Vehicle Labour Ledger", path: "/home/v-labour-ledger" },
-      { emoji: "👥", title: "Labour Management", path: "/home/manage-labour" },
-    ]
-  },
-  {
-    label: "💼 Financial Management",
-    items: [
-      { emoji: "📊", title: "Client Ledger", path: "/home/client-ledger" },
-      { emoji: "📈", title: "Income Ledger", path: "/home/income-ledger" },
-      { emoji: "💸", title: "Expense Management", path: "/home/raw-material-entry" },
-      { emoji: "💳", title: "Cash Ledger", path: "/home/cash-ledger" }
-    ]
-  },
-  {
-    label: "🚗 Vehicle Operations",
-    items: [
-      { emoji: "🚛", title: "Vehicle Management", path: "/home/manage-vehicle" },
-      { emoji: "💰", title: "Vehicle Wages", path: "/home/vehicle-wages" }
-    ]
-  },
-  {
-    label: "🏗️ Procurement Management",
-    items: [
-      { emoji: "🏢", title: "Vendor Management", path: "/home/vendor-management" },
-      { emoji: "📝", title: "Procurement Entry", path: "/home/procurement-entry" },
-      { emoji: "📋", title: "Procurement Reports", path: "/home/procurement-reports" }
-    ]
-  },
-  
-];
-
 
 export default Home;

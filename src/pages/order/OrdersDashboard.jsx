@@ -1,5 +1,5 @@
 // OrdersDashboard.jsx - Version 2.0 with caching and role-based access
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { collection, query, where, getDocs, orderBy, limit, startAfter, doc, updateDoc, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { useNavigate } from "react-router-dom";
@@ -48,6 +48,14 @@ function OrdersDashboard({ onBack }) {
   const [sortOrder, setSortOrder] = useState("desc");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+
+  // Get organization context
+  const { selectedOrganization } = useOrganization();
+  
+  // Memoize organization ID for caching
+  const orgID = useMemo(() => {
+    return selectedOrganization?.orgID || null;
+  }, [selectedOrganization]);
   
   // Data states
   const [loading, setLoading] = useState(false);
@@ -62,8 +70,6 @@ function OrdersDashboard({ onBack }) {
   const [isManager, setIsManager] = useState(false);
   
   const navigate = useNavigate();
-  const { selectedOrganization } = useOrganization();
-  const orgID = selectedOrganization?.orgID || "mock-org-id";
 
 
   // Mock wallet initialization (replace with actual wallet context)
@@ -424,26 +430,39 @@ function OrdersDashboard({ onBack }) {
     setShowCancelModal(true);
   };
 
-  // Filter orders
-  const filteredOrders = paginatedOrders.filter(order => {
-    const matchesFilter = !dmFilter || 
-      order.dmNumber?.toString().includes(dmFilter) ||
-      order.clientName?.toLowerCase().includes(dmFilter.toLowerCase());
+  // Memoize filtered orders to prevent unnecessary recalculations
+  const filteredOrders = useMemo(() => {
+    return paginatedOrders.filter(order => {
+      const matchesFilter = !dmFilter || 
+        order.dmNumber?.toString().includes(dmFilter) ||
+        order.clientName?.toLowerCase().includes(dmFilter.toLowerCase());
+      
+      const matchesStatus = statusFilter === "all" || order.status === statusFilter;
+      
+      const matchesDateRange = (!startDate || !endDate) || 
+        (order.deliveryDate && 
+         new Date(order.deliveryDate) >= new Date(startDate) && 
+         new Date(order.deliveryDate) <= new Date(endDate));
+      
+      const matchesDmRange = (!dmFrom || !dmTo) || 
+        (order.dmNumber && 
+         order.dmNumber >= parseInt(dmFrom) &&
+         order.dmNumber <= parseInt(dmTo));
+      
+      return matchesFilter && matchesStatus && matchesDateRange && matchesDmRange;
+    });
+  }, [paginatedOrders, dmFilter, statusFilter, startDate, endDate, dmFrom, dmTo]);
+
+  // Memoize summary calculations to prevent unnecessary recalculations
+  const summaryData = useMemo(() => {
+    const totalOrders = filteredOrders.length;
+    const totalValue = filteredOrders.reduce((sum, order) => 
+      sum + ((order.productQuant || 0) * (order.productUnitPrice || 0)), 0
+    );
+    const cancelledOrders = filteredOrders.filter(order => order.status === 'cancelled').length;
     
-    const matchesStatus = statusFilter === "all" || order.status === statusFilter;
-    
-    const matchesDateRange = (!startDate || !endDate) || 
-      (order.deliveryDate && 
-       new Date(order.deliveryDate) >= new Date(startDate) && 
-       new Date(order.deliveryDate) <= new Date(endDate));
-    
-    const matchesDmRange = (!dmFrom || !dmTo) || 
-      (order.dmNumber && 
-       order.dmNumber >= parseInt(dmFrom) && 
-       order.dmNumber <= parseInt(dmTo));
-    
-    return matchesFilter && matchesStatus && matchesDateRange && matchesDmRange;
-  });
+    return { totalOrders, totalValue, cancelledOrders };
+  }, [filteredOrders]);
 
   // DataTable columns configuration
   const columns = [
@@ -719,21 +738,19 @@ function OrdersDashboard({ onBack }) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4" style={{ margin: "1rem 0" }}>
           <SummaryCard
             title="📊 Total Orders"
-            value={filteredOrders.length}
+            value={summaryData.totalOrders}
             valueColor="#00c3ff"
             icon="📋"
           />
           <SummaryCard
             title="💰 Total Value"
-            value={formatINR(filteredOrders.reduce((sum, order) => 
-              sum + ((order.productQuant || 0) * (order.productUnitPrice || 0)), 0
-            ))}
+            value={formatINR(summaryData.totalValue)}
             valueColor="#32D74B"
             icon="💵"
           />
           <SummaryCard
             title="❌ Cancelled Orders"
-            value={filteredOrders.filter(order => order.status === 'cancelled').length}
+            value={summaryData.cancelledOrders}
             valueColor="#FF453A"
             icon="🚫"
           />

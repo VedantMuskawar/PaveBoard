@@ -114,6 +114,9 @@ const fetchOrdersWithCache = useCallback(async (date) => {
     const dateStr = typeof date === 'string' ? date : ymdLocal(date);
     const customCacheKey = `${orgId}_${dateStr}`;
     
+    console.log('🔑 Cache key:', customCacheKey);
+    console.log('📅 Input date:', date, 'Formatted:', dateStr);
+    
     const result = await cacheUtils.smartFetchOrders(customCacheKey, async () => {
       const start = parseYMDLocal(date);
       const end = new Date(start);
@@ -188,16 +191,26 @@ useEffect(() => {
     const matchesDate = orderDate === selectedDate;
     const matchesVehicle = !selectedVehicle || o.vehicleNumber === selectedVehicle;
     
-    if (!matchesDate) {
-      console.log('❌ Order date mismatch:', {
+    // Debug first few orders
+    if (orders.indexOf(o) < 3) {
+      console.log('🔍 Order filtering debug:', {
+        dmNumber: o.dmNumber,
+        deliveryDate: o.deliveryDate,
         orderDate,
         selectedDate,
-        deliveryDate: o.deliveryDate,
-        dmNumber: o.dmNumber
+        matchesDate,
+        deliveryDateType: typeof o.deliveryDate
       });
     }
     
     return matchesDate && matchesVehicle;
+  });
+  
+  console.log('📊 Filtering results:', {
+    totalOrders: orders.length,
+    filteredOrders: filteredOrders.length,
+    selectedDate,
+    selectedVehicle
   });
 
   // Sort filteredOrders: Pending first, then Dispatched, then Delivered

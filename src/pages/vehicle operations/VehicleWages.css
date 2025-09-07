@@ -1,0 +1,265 @@
+/* VehicleWages.css - Styles for Vehicle Wages Management */
+
+/* Main container styles */
+.vehicle-management-container {
+  font-family: "Inter", sans-serif;
+  background: #12181f;
+  color: #fff;
+  min-height: 100vh;
+  padding-bottom: 2rem;
+}
+
+.main-content {
+  padding: 1rem 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.content-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* Form styles */
+.form-buttons-container {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.add-vehicle-btn {
+  background: #00c3ff;
+  border: none;
+  color: #12181f;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.add-vehicle-btn:hover {
+  background: #0099cc;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 195, 255, 0.3);
+}
+
+/* Modal styles */
+.modal-content {
+  background: #1e2a38;
+  padding: 2rem;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 500px;
+  box-shadow: 0 0 30px rgba(0, 195, 255, 0.15);
+}
+
+.form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.vehicle-input {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #2e3b4d;
+  background: #232c3b;
+  color: #fff;
+  font-size: 1rem;
+  transition: border-color 0.3s ease;
+}
+
+.vehicle-input:focus {
+  outline: none;
+  border-color: #00c3ff;
+  box-shadow: 0 0 0 2px rgba(0, 195, 255, 0.2);
+}
+
+.submit-btn {
+  background: #00c3ff;
+  border: none;
+  color: #12181f;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  align-self: flex-end;
+}
+
+.submit-btn:hover {
+  background: #0099cc;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 195, 255, 0.3);
+}
+
+/* Table styles */
+.table-section {
+  background: #222;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 0 20px rgba(0, 195, 255, 0.25);
+}
+
+.scrollable-container {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.vehicle-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  font-family: "Inter", sans-serif;
+  color: #f5faff;
+}
+
+.vehicle-table th {
+  font-weight: bold;
+  padding: 12px 16px;
+  text-align: left;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  color: #00c3ff;
+  background: rgba(0, 195, 255, 0.1);
+  border-bottom: 2px solid rgba(0, 195, 255, 0.3);
+}
+
+.vehicle-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: #eee;
+}
+
+.vehicle-table tr:hover {
+  background-color: rgba(0, 195, 255, 0.05);
+}
+
+/* Status toggle styles */
+.status-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 24px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #666;
+  transition: 0.3s;
+  border-radius: 24px;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: 50%;
+}
+
+input:checked + .toggle-slider {
+  background-color: #00c3ff;
+}
+
+input:checked + .toggle-slider:before {
+  transform: translateX(26px);
+}
+
+.status-text {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #888;
+}
+
+.status-text.active {
+  color: #00c3ff;
+}
+
+/* Action buttons */
+.action-buttons {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.edit-btn {
+  background: #00c3ff;
+  border: none;
+  color: #12181f;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.8rem;
+  transition: all 0.3s ease;
+}
+
+.edit-btn:hover {
+  background: #0099cc;
+  transform: translateY(-1px);
+}
+
+.delete-btn {
+  background: #ff4d4f;
+  border: none;
+  color: #fff;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.8rem;
+  transition: all 0.3s ease;
+}
+
+.delete-btn:hover {
+  background: #ff3333;
+  transform: translateY(-1px);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .main-content {
+    padding: 1rem;
+  }
+  
+  .form-section {
+    gap: 1rem;
+  }
+  
+  .vehicle-input {
+    padding: 0.6rem;
+  }
+  
+  .vehicle-table th,
+  .vehicle-table td {
+    padding: 8px 12px;
+    font-size: 0.8rem;
+  }
+}

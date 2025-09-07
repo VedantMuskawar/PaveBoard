@@ -1,0 +1,229 @@
+/* Expense Management Page Styles */
+
+/* Table Styling */
+.expenses-table {
+  background: rgba(20,20,22,0.6);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+}
+
+.expenses-table table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: auto;
+  font-size: 0.95rem;
+  color: #f5faff;
+  background: transparent;
+}
+
+.expenses-table thead tr {
+  background: rgba(20,20,22,0.65);
+  backdrop-filter: blur(10px);
+}
+
+.expenses-table th {
+  padding: 0.85rem 0.9rem;
+  text-align: center;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  font-weight: 700;
+  color: #E5E7EB;
+  font-size: 0.98rem;
+  white-space: nowrap;
+}
+
+.expenses-table tbody tr {
+  background: rgba(28,28,30,0.42);
+  transition: background-color 160ms ease;
+  backdrop-filter: blur(6px);
+}
+
+.expenses-table tbody tr:hover {
+  background: rgba(255,255,255,0.04);
+}
+
+.expenses-table td {
+  padding: 0.75rem 0.9rem;
+  text-align: center;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  color: #EDEEF0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+/* Labour Search Dropdown */
+.labour-search-container {
+  position: relative;
+}
+
+.labour-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: rgba(28,28,30,0.95);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 12px;
+  margin-top: 0.25rem;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 100;
+  backdrop-filter: blur(20px);
+}
+
+.labour-option {
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.labour-option:hover {
+  background: rgba(0,122,255,0.1);
+}
+
+.labour-option:last-child {
+  border-bottom: none;
+}
+
+.labour-name {
+  font-weight: 600;
+  color: #fff;
+}
+
+.linked-indicator {
+  font-size: 0.8rem;
+  color: #9ba3ae;
+  margin-left: 0.5rem;
+}
+
+/* Image Upload */
+.image-upload-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.image-upload-button {
+  background: rgba(0,122,255,0.2);
+  border: 1px solid rgba(0,122,255,0.3);
+  color: #007AFF;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.image-upload-button:hover {
+  background: rgba(0,122,255,0.3);
+  border-color: rgba(0,122,255,0.5);
+}
+
+.image-preview-container {
+  position: relative;
+  display: inline-block;
+  max-width: 200px;
+}
+
+.image-preview {
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.2);
+}
+
+.remove-image-button {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: rgba(255,68,68,0.9);
+  border: none;
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Labour Info Display */
+.labour-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.labour-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.info-label {
+  font-size: 0.8rem;
+  color: #9ba3ae;
+  font-weight: 600;
+}
+
+.info-value {
+  font-size: 1rem;
+  color: #fff;
+  font-weight: 700;
+}
+
+.linked-labours-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.linked-labour-tag {
+  background: rgba(0,122,255,0.2);
+  color: #007AFF;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* Current Balance Display */
+.current-balance-display {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #495057;
+}
+
+/* Apple Button Effect */
+.apple-button:active {
+  transform: scale(0.98);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .labour-info-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .linked-labours-list {
+    flex-direction: column;
+  }
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

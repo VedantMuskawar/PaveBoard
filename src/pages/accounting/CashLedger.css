@@ -1,0 +1,399 @@
+/* Cash Ledger Styles */
+
+/* Apple-style font stack */
+.apple-font {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  color: #f5f5f7;
+  position: relative;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.cash-ledger-container {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  background: radial-gradient(1200px 800px at 20% -10%, #1f232a 0%, #0b0d0f 60%);
+  color: #f5f5f7;
+  min-height: 100vh;
+  padding-bottom: 2rem;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.cash-ledger-header {
+  background: transparent;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 1.2rem;
+  font-weight: 700;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.cash-ledger-back-button {
+  font-size: 0.95rem;
+  cursor: pointer;
+  color: #9ba3ae;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(180deg, rgba(40,40,42,0.8), rgba(26,26,28,0.8));
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+  user-select: none;
+  transition: all 0.2s ease;
+}
+
+.cash-ledger-back-button:hover {
+  background: linear-gradient(180deg, rgba(50,50,52,0.9), rgba(36,36,38,0.9));
+  transform: translateY(-1px);
+}
+
+.cash-ledger-role-badge {
+  font-size: 0.9rem;
+  color: #9ba3ae;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.cash-ledger-role-badge.admin {
+  background: rgba(50,215,75,0.2);
+  border: 1px solid rgba(50,215,75,0.4);
+}
+
+.cash-ledger-role-badge.manager {
+  background: rgba(10,132,255,0.2);
+  border: 1px solid rgba(10,132,255,0.4);
+}
+
+.cash-ledger-main-content {
+  margin-top: 1.5rem;
+  padding: 0 2rem;
+}
+
+/* Card surface styling */
+.card-surface {
+  background: rgba(28,28,30,0.75);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.35);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.cash-ledger-main-card {
+  background: rgba(28,28,30,0.75);
+  max-width: 1024px;
+  margin: 1.5rem auto;
+  border-radius: 16px;
+  padding: 1.25rem 1.25rem 1.5rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 20px 50px rgba(0,0,0,0.35);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.cash-ledger-date-picker-container {
+  display: flex;
+  justify-content: center;
+}
+
+.cash-ledger-date-picker {
+  height: 44px;
+  padding: 0.55rem 0.9rem;
+  background: rgba(28,28,30,0.9);
+  border: 1px solid rgba(255,255,255,0.10);
+  color: #fff;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  min-width: 220px;
+  text-align: center;
+  outline-offset: 2px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+  box-sizing: border-box;
+  transition: all 0.2s ease;
+}
+
+.cash-ledger-date-picker:focus {
+  border-color: rgba(10,132,255,0.5);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), 0 0 0 3px rgba(10,132,255,0.1);
+}
+
+/* Button styles */
+.button-primary {
+  background: linear-gradient(180deg, #0A84FF, #0066CC);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 14px;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(10,132,255,0.25);
+  transition: transform 120ms ease, box-shadow 200ms ease;
+}
+
+.cash-ledger-print-button {
+  background: linear-gradient(180deg, #0A84FF, #0066CC);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 14px;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(10,132,255,0.25);
+  transition: transform 120ms ease, box-shadow 200ms ease;
+}
+
+.cash-ledger-print-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 25px rgba(10,132,255,0.35);
+}
+
+.cash-ledger-print-button:active {
+  transform: scale(0.98);
+}
+
+.cash-ledger-net-cash {
+  text-align: center;
+  font-size: 1.05rem;
+  color: #E5E7EB;
+  margin-top: 1.25rem;
+  font-weight: 600;
+}
+
+.cash-ledger-approval-status {
+  border-radius: 12px;
+  padding: 1rem 1.5rem;
+  margin: 1rem 0;
+  text-align: center;
+  font-size: 1.1rem;
+  font-weight: 600;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: all 0.3s ease;
+}
+
+.cash-ledger-approval-status.approved {
+  background: linear-gradient(135deg, rgba(50,215,75,0.15), rgba(50,215,75,0.08));
+  border: 1px solid rgba(50,215,75,0.3);
+  color: #32d74b;
+}
+
+.cash-ledger-approval-status.pending {
+  background: linear-gradient(135deg, rgba(255,69,58,0.15), rgba(255,69,58,0.08));
+  border: 1px solid rgba(255,69,58,0.3);
+  color: #ff453a;
+}
+
+.cash-ledger-approval-details {
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+  opacity: 0.8;
+  font-weight: 400;
+}
+
+.cash-ledger-table-wrapper {
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.30);
+  background-color: transparent;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.cash-ledger-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.95rem;
+  color: #f5f5f7;
+  background: transparent;
+}
+
+.cash-ledger-table thead {
+  background: rgba(20,20,22,0.65);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.cash-ledger-table thead tr {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.cash-ledger-table tfoot {
+  background-color: #0c2f4a;
+}
+
+.cash-ledger-table th {
+  font-weight: 700;
+  padding: 12px 10px;
+  text-align: center;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  font-size: 0.98rem;
+  color: #E5E7EB;
+  user-select: none;
+}
+
+.cash-ledger-table td {
+  padding: 12px 10px;
+  text-align: center;
+  font-size: 0.95rem;
+  color: #EDEEF0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.cash-ledger-table tbody tr {
+  transition: background-color 160ms ease, transform 120ms ease;
+}
+
+.cash-ledger-table tbody tr:hover {
+  background-color: rgba(255,255,255,0.04) !important;
+  cursor: pointer;
+}
+
+.cash-ledger-table tbody tr.approved {
+  background: linear-gradient(180deg, rgba(50,215,75,0.2), rgba(50,215,75,0.12));
+  border: 1px solid rgba(50,215,75,0.3);
+}
+
+.cash-ledger-table tbody tr.order-row {
+  background: linear-gradient(180deg, rgba(10,132,255,0.14), rgba(10,132,255,0.08));
+}
+
+.cash-ledger-table tbody tr.payment-row {
+  background: linear-gradient(180deg, rgba(50,215,75,0.14), rgba(50,215,75,0.08));
+}
+
+.cash-ledger-table tbody tr.expense-row {
+  background: linear-gradient(180deg, rgba(255,69,58,0.14), rgba(255,69,58,0.08));
+}
+
+.cash-ledger-table .empty-row {
+  padding: 1rem;
+  text-align: center;
+  color: #777;
+}
+
+.cash-ledger-table .footer-row {
+  font-weight: 700;
+  background-color: rgba(255,255,255,0.03);
+  color: #E5E7EB;
+}
+
+.cash-ledger-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cash-ledger-checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.cash-ledger-checkbox-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.cash-ledger-loading-indicator {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  background: #00c3ff;
+  border-radius: 50%;
+  animation: pulse 1.5s infinite;
+}
+
+.cash-ledger-mode-distribution {
+  margin-top: 2rem;
+  overflow-x: auto;
+}
+
+.cash-ledger-mode-distribution h3 {
+  color: #00c3ff;
+  margin-bottom: 0.5rem;
+}
+
+/* Animations */
+@keyframes pulse {
+  0% { 
+    opacity: 1; 
+    transform: scale(1); 
+  }
+  50% { 
+    opacity: 0.5; 
+    transform: scale(1.2); 
+  }
+  100% { 
+    opacity: 1; 
+    transform: scale(1); 
+  }
+}
+
+/* Accessibility and reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  * { 
+    animation: none !important; 
+    transition: none !important; 
+  }
+}
+
+/* Date picker styling */
+input[type="date"]::-webkit-calendar-picker-indicator { 
+  filter: invert(1); 
+}
+
+/* Print styles */
+@media print {
+  .cash-ledger-container {
+    background: white;
+    color: black;
+  }
+  
+  .cash-ledger-header,
+  .cash-ledger-print-button,
+  .cash-ledger-approval-status {
+    display: none;
+  }
+  
+  .cash-ledger-main-card {
+    background: white;
+    border: 1px solid #ccc;
+    box-shadow: none;
+  }
+  
+  .cash-ledger-table {
+    color: black;
+  }
+  
+  .cash-ledger-table thead {
+    background: #f5f5f5;
+  }
+  
+  .cash-ledger-table th,
+  .cash-ledger-table td {
+    color: black;
+    border-bottom: 1px solid #ccc;
+  }
+}

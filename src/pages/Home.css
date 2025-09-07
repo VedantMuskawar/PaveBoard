@@ -1,0 +1,33 @@
+/* Home Page Dark Theme Styles */
+.dash-card.hidden {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+/* Custom hover effects for dashboard cards */
+.dash-card:hover {
+  transform: translateY(-2px);
+}
+
+/* Smooth transitions for all interactive elements */
+* {
+  transition: all 0.2s ease-in-out;
+}
+
+/* Custom scrollbar for the dashboard */
+.dashboard-main::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dashboard-main::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+.dashboard-main::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 4px;
+}
+
+.dashboard-main::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}

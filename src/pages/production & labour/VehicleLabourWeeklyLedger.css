@@ -1,0 +1,352 @@
+/* Vehicle Labour Weekly Ledger Styles */
+
+/* Apple Glass UI Variables */
+:root {
+  --panel-bg: rgba(28, 28, 30, 0.60);
+  --header-bg: rgba(20, 20, 22, 0.55);
+  --stroke: rgba(255,255,255,0.10);
+  --ring: rgba(0, 195, 255, 0.55);
+  --ring-strong: rgba(0, 195, 255, 0.85);
+  --text: #f5f5f7;
+  --muted: #9aa0a6;
+  --accent: #0A84FF;
+  --accent-2: #00FFCC;
+  --danger: #FF453A;
+  --ok: #00FF99;
+  --shadow-1: 0 1px 3px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.28);
+  --shadow-2: 0 1px 2px rgba(0,0,0,0.24), 0 12px 32px rgba(0,0,0,0.35);
+}
+
+/* Root Container */
+.apple-root {
+  background: radial-gradient(1200px 800px at 20% -10%, #1f232a 0%, #0b0d0f 60%);
+  color: var(--text);
+  animation: fadeIn 420ms ease-out;
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: 0.01em;
+}
+
+/* Header Styles */
+.apple-header {
+  backdrop-filter: saturate(140%) blur(18px);
+  -webkit-backdrop-filter: saturate(140%) blur(18px);
+  background: var(--header-bg) !important;
+  border-bottom: 1px solid var(--stroke) !important;
+  box-shadow: var(--shadow-1);
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 1.2rem;
+  font-weight: 700;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.apple-title {
+  letter-spacing: 0.2px;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.35);
+}
+
+/* Glass Panel */
+.glass-panel {
+  background: var(--panel-bg) !important;
+  border: 1px solid var(--stroke) !important;
+  backdrop-filter: blur(12px) saturate(130%);
+  -webkit-backdrop-filter: blur(12px) saturate(130%);
+  box-shadow: var(--shadow-1);
+  transition: box-shadow 220ms ease, transform 220ms ease;
+  border-radius: 16px !important;
+}
+
+.glass-panel:hover {
+  box-shadow: var(--shadow-2);
+  transform: translateY(-1px);
+}
+
+/* Buttons */
+.apple-btn {
+  border: none;
+  border-radius: 12px;
+  font-weight: 700;
+  color: #0b0b0c;
+  padding: 10px 16px;
+  transition: transform 120ms ease, box-shadow 200ms ease, filter 200ms ease;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+  will-change: transform;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+}
+
+.apple-btn.primary {
+  background: linear-gradient(180deg, #0A84FF, #0066CC);
+  color: #fff;
+}
+
+.apple-btn.danger {
+  background: linear-gradient(180deg, #FF453A, #C62D23);
+  color: #fff;
+}
+
+.apple-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* Back Button */
+.back-button {
+  font-size: 0.95rem;
+  cursor: pointer;
+  color: #9ba3ae;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(180deg, rgba(40,40,42,0.8), rgba(26,26,28,0.8));
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+  user-select: none;
+  transition: all 200ms ease;
+}
+
+.back-button:hover {
+  background: linear-gradient(180deg, rgba(50,50,52,0.9), rgba(36,36,38,0.9));
+  color: #fff;
+}
+
+/* Role Badge */
+.role-badge {
+  font-size: 0.9rem;
+  color: #9ba3ae;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid;
+}
+
+.role-badge.admin {
+  background: rgba(50,215,75,0.2);
+  border-color: rgba(50,215,75,0.4);
+}
+
+.role-badge.manager {
+  background: rgba(10,132,255,0.2);
+  border-color: rgba(10,132,255,0.4);
+}
+
+/* Filter Card */
+.filter-card {
+  background: rgba(28,28,30,0.75);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 20px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.35);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 1.25rem 1.25rem;
+  margin: 1.25rem auto 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.25rem;
+  align-items: end;
+}
+
+/* Input Styles */
+.apple-input, .apple-select, .apple-date {
+  appearance: none;
+  background: linear-gradient(180deg, rgba(32,32,34,0.92), rgba(24,24,26,0.92));
+  border: 1px solid var(--stroke);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 0.55rem 0.9rem;
+  outline: none;
+  transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.03) inset;
+  height: 44px;
+}
+
+.apple-input:focus, .apple-select:focus, .apple-date:focus {
+  border-color: var(--ring-strong);
+  box-shadow: 0 0 0 3px rgba(0,195,255,0.18);
+}
+
+/* Table Styles */
+.table-wrapper {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 72vh;
+  position: relative;
+  background: #12191f;
+  padding: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 0 12px rgba(0,0,0,0.6);
+  margin: 2rem auto;
+  width: 95%;
+}
+
+.ledger-table {
+  display: table;
+  table-layout: auto;
+  border-collapse: collapse;
+  min-width: 400px;
+  width: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  font-size: 0.91rem;
+  color: #f5faff;
+}
+
+.ledger-table th, .ledger-table td {
+  white-space: nowrap;
+  padding: 8px 12px;
+  text-align: center;
+  border-right: 1px solid #333;
+}
+
+.ledger-table th:last-child, .ledger-table td:last-child {
+  border-right: none;
+}
+
+.ledger-table thead tr {
+  border-bottom: 2px solid #444;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  z-index: 3;
+}
+
+.ledger-table th {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #b0cfff;
+  background: #161c20;
+  border-right: 1px solid #333;
+  text-align: center;
+  vertical-align: middle;
+  height: 42px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 10px 6px;
+}
+
+.ledger-table .balance-row {
+  background: #1e1e1e;
+  font-weight: 600;
+  border-top: 2px solid #555;
+}
+
+/* Sticky Columns */
+.sticky-col {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #111;
+  box-shadow: 2px 0 5px rgba(0,0,0,0.3);
+}
+
+.sticky-col + .sticky-col {
+  left: 120px;
+}
+
+.sticky-col:nth-child(3) {
+  left: 240px;
+}
+
+/* Table Cell Styles */
+.table-cell {
+  padding: 10px 8px;
+  text-align: center;
+  font-size: 0.9rem;
+  color: #eee;
+  background: rgba(36,48,55,0.60);
+  border-bottom: 1px solid #222;
+  transition: background-color 0.17s cubic-bezier(.4,0,.2,1);
+  border-left: 1px solid #333;
+  min-width: 120px;
+  max-width: 120px;
+}
+
+.table-cell.balance {
+  font-weight: bold;
+  color: #00c3ff;
+  background: #1c2233;
+  text-transform: none;
+  font-size: 0.92rem;
+  border-bottom: none;
+  border-top: 1px solid #333;
+}
+
+.table-cell.payment {
+  color: #66ff66;
+  background: #142d14;
+  font-style: italic;
+  border-top: 1px solid #333;
+}
+
+.table-cell.footer {
+  background: #1a2a33;
+  font-weight: bold;
+  color: #00c3ff;
+  border-bottom: none;
+}
+
+.table-cell.payment-label {
+  font-style: italic;
+  color: #aaa;
+  background: #1a2a33;
+}
+
+/* Row Hover Effects */
+.table-row:hover {
+  background-color: #232a2f;
+}
+
+/* Date Input Styling */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
+
+/* Fade Effect */
+.fade-edge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 40px;
+  height: 100%;
+  background: linear-gradient(to left, #1f1f1f, rgba(31, 31, 31, 0));
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0 }
+  to { opacity: 1 }
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .filter-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .table-wrapper {
+    width: 98%;
+    margin: 1rem auto;
+  }
+  
+  .ledger-table {
+    font-size: 0.8rem;
+  }
+  
+  .ledger-table th, .ledger-table td {
+    padding: 6px 8px;
+  }
+}

@@ -1,0 +1,311 @@
+/* Vehicle Management Styles */
+.vehicle-management-container {
+  min-height: 100vh;
+  background: radial-gradient(1200px 800px at 20% -10%, #1f232a 0%, #0b0d0f 60%);
+  color: #f5f5f7;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  padding-bottom: 2rem;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: 0.01em;
+}
+
+.vehicle-header {
+  background: transparent;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 1.2rem;
+  font-weight: 700;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: #f5f5f7;
+}
+
+.back-button {
+  font-size: 0.95rem;
+  cursor: pointer;
+  color: #9ba3ae;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(180deg, rgba(40,40,42,0.8), rgba(26,26,28,0.8));
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+  user-select: none;
+  transition: transform 120ms ease;
+}
+
+.back-button:hover {
+  transform: translateY(-1px);
+}
+
+.page-title {
+  flex: 1;
+  text-align: center;
+  letter-spacing: 0.2px;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.35);
+}
+
+.role-badge {
+  font-size: 0.9rem;
+  color: #9ba3ae;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.role-badge.admin {
+  background: rgba(50,215,75,0.2);
+  border: 1px solid rgba(50,215,75,0.4);
+}
+
+.role-badge.manager {
+  background: rgba(10,132,255,0.2);
+  border: 1px solid rgba(10,132,255,0.4);
+}
+
+.main-content {
+  margin-top: 1.5rem;
+  padding: 0 2rem;
+}
+
+.content-panel {
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  background: rgba(28, 28, 30, 0.60);
+  border: 1px solid rgba(255,255,255,0.10);
+  backdrop-filter: blur(12px) saturate(130%);
+  -webkit-backdrop-filter: blur(12px) saturate(130%);
+}
+
+.form-buttons-container {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.add-vehicle-btn {
+  border: none;
+  border-radius: 12px;
+  font-weight: 700;
+  color: #0b0b0c;
+  padding: 10px 16px;
+  transition: transform 120ms ease, box-shadow 200ms ease, filter 200ms ease;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+  will-change: transform;
+  letter-spacing: 0.2px;
+  background: linear-gradient(180deg, #0A84FF, #0066CC);
+  color: #fff;
+  cursor: pointer;
+}
+
+.add-vehicle-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(0,0,0,0.4);
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 100vw;
+  background-color: rgba(0,0,0,0.85);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  position: relative;
+  padding: 2rem;
+  border-radius: 16px;
+  min-width: 320px;
+  max-width: 480px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+  background: rgba(28, 28, 30, 0.60);
+  border: 1px solid rgba(255,255,255,0.10);
+  backdrop-filter: blur(12px) saturate(130%);
+  -webkit-backdrop-filter: blur(12px) saturate(130%);
+}
+
+.modal-close-btn {
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  background: transparent;
+  border: none;
+  font-size: 24px;
+  color: white;
+  cursor: pointer;
+}
+
+.form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.form-title {
+  margin-bottom: 1rem;
+  font-weight: 700;
+  font-size: 1.25rem;
+}
+
+.vehicle-input,
+.vehicle-select {
+  appearance: none;
+  background: linear-gradient(180deg, rgba(32,32,34,0.92), rgba(24,24,26,0.92));
+  border: 1px solid rgba(255,255,255,0.10);
+  color: #f5f5f7;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  outline: none;
+  transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.03) inset;
+  height: 44px;
+}
+
+.vehicle-input:focus,
+.vehicle-select:focus {
+  border-color: rgba(0,195,255,0.85);
+  box-shadow: 0 0 0 3px rgba(0,195,255,0.18);
+}
+
+.submit-btn {
+  background-color: #00c3ff;
+  color: #12181f;
+  font-weight: bold;
+  border: none;
+  border-radius: 6px;
+  padding: 0.6rem 1.25rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.submit-btn:hover {
+  background-color: #00a8d4;
+}
+
+.table-section {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 0 15px rgba(0, 195, 255, 0.12);
+  backdrop-filter: blur(8px);
+  overflow-x: auto;
+  background: transparent;
+  margin-bottom: 2rem;
+}
+
+.table-title {
+  font-weight: 700;
+  font-size: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.vehicle-table {
+  border-collapse: separate !important;
+  border-spacing: 0 8px !important;
+  width: 100%;
+}
+
+.table-header th {
+  color: #b0cfff;
+  font-weight: 600;
+  background: #161c20;
+  font-weight: bold;
+  padding: 10px 8px;
+  text-align: center;
+  border-bottom: 1px solid #444;
+  text-transform: uppercase;
+  font-size: 0.9rem;
+  color: #00c3ff;
+}
+
+.table-row {
+  background: rgba(36,48,55,0.60);
+  transition: background-color 0.17s cubic-bezier(.4,0,.2,1);
+}
+
+.table-row:hover {
+  background-color: #243037;
+}
+
+.table-cell {
+  padding: 10px 8px;
+  text-align: center;
+  font-size: 0.9rem;
+  color: #eee;
+}
+
+.delete-btn {
+  background-color: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  transition: background-color 0.3s ease;
+  font-size: 1rem;
+  color: #ff4d4f;
+}
+
+.delete-btn:hover {
+  background-color: #ff7875;
+}
+
+.scrollable-container {
+  overflow-x: auto;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .main-content {
+    padding: 0 1rem;
+  }
+  
+  .content-panel {
+    padding: 1rem;
+  }
+  
+  .vehicle-header {
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+  }
+  
+  .modal-content {
+    margin: 1rem;
+    min-width: 280px;
+  }
+}
+
+/* Animation */
+@keyframes fadeIn {
+  from { opacity: 0 }
+  to { opacity: 1 }
+}
+
+.vehicle-management-container {
+  animation: fadeIn 420ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

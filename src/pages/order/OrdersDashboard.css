@@ -1,0 +1,212 @@
+/* Orders Dashboard Page-Specific Styles */
+
+/* Custom scrollbar for the page */
+.orders-dashboard::-webkit-scrollbar {
+  width: 8px;
+}
+
+.orders-dashboard::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.orders-dashboard::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.orders-dashboard::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Table row animations */
+@keyframes fadeInRow {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.orders-table-row {
+  animation: fadeInRow 0.4s ease both;
+}
+
+/* Hover effects for table rows */
+.orders-table-row:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+  z-index: 1;
+  position: relative;
+}
+
+/* Status badge animations */
+.status-badge {
+  transition: all 200ms ease;
+}
+
+.status-badge:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* DM link hover effects */
+.dm-link {
+  transition: all 200ms ease;
+}
+
+.dm-link:hover {
+  color: #00d4ff !important;
+  text-decoration: underline !important;
+  transform: scale(1.05);
+}
+
+/* Filter card hover effects */
+.filter-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.4);
+}
+
+/* Table card hover effects */
+.table-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.4);
+}
+
+/* Pagination card hover effects */
+.pagination-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.4);
+}
+
+/* Input field focus effects */
+.input-field:focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2) !important;
+  transform: scale(1.02);
+}
+
+/* Date input calendar picker styling */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
+
+/* Button active states */
+.apple-button:active {
+  transform: scale(0.98);
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Font smoothing */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Loading animation */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Export button loading state */
+.export-loading {
+  position: relative;
+  overflow: hidden;
+}
+
+.export-loading::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
+  animation: shimmer 1.5s infinite;
+}
+
+/* Today's delivery highlight */
+.today-delivery {
+  border-left: 4px solid #00c3ff !important;
+  background: rgba(0, 195, 255, 0.1) !important;
+}
+
+/* Cancelled order styling */
+.cancelled-order {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+/* Responsive table adjustments */
+@media (max-width: 1024px) {
+  .orders-table {
+    font-size: 0.875rem;
+  }
+  
+  .orders-table th,
+  .orders-table td {
+    padding: 0.5rem 0.25rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .orders-table {
+    font-size: 0.75rem;
+  }
+  
+  .orders-table th,
+  .orders-table td {
+    padding: 0.25rem 0.125rem;
+  }
+  
+  .filter-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Print styles */
+@media print {
+  .orders-dashboard {
+    background: white !important;
+    color: black !important;
+  }
+  
+  .orders-table {
+    border: 1px solid black;
+  }
+  
+  .orders-table th,
+  .orders-table td {
+    border: 1px solid black;
+    padding: 0.5rem;
+  }
+}

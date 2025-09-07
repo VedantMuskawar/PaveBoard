@@ -1,0 +1,499 @@
+/* DieselLedger.css - Styles extracted from DieselLedger.jsx */
+
+/* Page Styles */
+.diesel-page {
+  background: radial-gradient(1200px 800px at 20% -10%, #1f232a 0%, #0b0d0f 60%);
+  min-height: 100vh;
+  padding-bottom: 2rem;
+  color: #f5f5f7;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Header Styles */
+.diesel-header {
+  background: rgba(20,20,22,0.6);
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 1.2rem;
+  font-weight: 700;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.diesel-back-button {
+  font-size: 0.95rem;
+  cursor: pointer;
+  color: #9ba3ae;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(180deg, rgba(40,40,42,0.8), rgba(26,26,28,0.8));
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+  user-select: none;
+}
+
+.diesel-back-button:hover {
+  background: linear-gradient(180deg, rgba(50,50,52,0.8), rgba(36,36,38,0.8));
+  transform: translateY(-1px);
+}
+
+/* Input Styles */
+.diesel-input {
+  height: 44px;
+  padding: 0.55rem 0.9rem;
+  width: 100%;
+  background: rgba(28,28,30,0.9);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 12px;
+  color: #fff;
+  font-size: 16px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+  box-sizing: border-box;
+}
+
+.diesel-input:focus {
+  border-color: rgba(10,132,255,0.5);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), 0 0 0 2px rgba(10,132,255,0.2);
+  outline: none;
+}
+
+/* Table Styles */
+.diesel-table-container {
+  background: transparent;
+  padding: 1rem;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.30);
+  overflow-x: auto;
+  margin-top: 1rem;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.diesel-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.diesel-table thead {
+  background: #1f1f1f;
+}
+
+.diesel-table th {
+  padding: 12px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  text-align: center;
+  font-weight: 700;
+  color: #E5E7EB;
+  font-size: 0.98rem;
+  background: transparent;
+}
+
+.diesel-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  text-align: center;
+  color: #EDEEF0;
+  font-size: 0.95rem;
+}
+
+.diesel-table-row {
+  background: rgba(28,28,30,0.42);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  transition: background-color 160ms ease, transform 120ms ease;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.diesel-table-row:hover {
+  background: rgba(255,255,255,0.04);
+}
+
+/* Button Styles */
+.diesel-button-primary {
+  background: linear-gradient(180deg, #0A84FF, #0066CC);
+  color: #fff;
+  font-weight: 600;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(10,132,255,0.25);
+  margin-bottom: 0.5rem;
+  transition: transform 120ms ease, box-shadow 200ms ease;
+}
+
+.diesel-button-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 25px rgba(10,132,255,0.3);
+}
+
+.diesel-button-settle {
+  background: linear-gradient(180deg, #0A84FF, #0066CC);
+  color: #fff;
+  font-weight: 600;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 0.92rem;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(10,132,255,0.22);
+  transition: transform 120ms ease, box-shadow 200ms ease;
+}
+
+.diesel-button-settle:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px rgba(10,132,255,0.28);
+}
+
+.diesel-button-unsettle {
+  background: linear-gradient(180deg, #FF453A, #C62D23);
+  color: #fff;
+  font-weight: 600;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 0.92rem;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(255,69,58,0.22);
+  transition: transform 120ms ease, box-shadow 200ms ease;
+}
+
+.diesel-button-unsettle:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px rgba(255,69,58,0.28);
+}
+
+.diesel-button-edit {
+  margin-left: 0.5rem;
+  background: linear-gradient(180deg, rgba(44,44,46,0.9), rgba(36,36,38,0.9));
+  color: #fff;
+  font-weight: 600;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.diesel-button-edit:hover {
+  background: linear-gradient(180deg, rgba(54,54,56,0.9), rgba(46,46,48,0.9));
+}
+
+.diesel-button-delete {
+  margin-left: 0.5rem;
+  background: linear-gradient(180deg, #FF453A, #C62D23);
+  color: #fff;
+  font-weight: 600;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.diesel-button-delete:hover {
+  background: linear-gradient(180deg, #FF6B5A, #D73A2A);
+}
+
+/* Status Badge Styles */
+.diesel-status-paid {
+  background-color: rgba(50,215,75,0.14);
+  color: #32D74B;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(50,215,75,0.35);
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.diesel-status-unpaid {
+  background-color: rgba(255,214,10,0.18);
+  color: #8a6f00;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,214,10,0.45);
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.diesel-status-verified {
+  background-color: rgba(50,215,75,0.14);
+  color: #32D74B;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(50,215,75,0.35);
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.diesel-status-unverified {
+  background-color: rgba(255,69,58,0.18);
+  color: #FF453A;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,69,58,0.45);
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+/* Modal Styles */
+.diesel-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.diesel-modal-content {
+  background: #1f1f1f;
+  padding: 2rem;
+  border-radius: 14px;
+  box-shadow: 0 6px 32px rgba(0,0,0,0.45);
+  border: 1px solid rgba(255,255,255,0.08);
+  max-width: 500px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.diesel-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.diesel-modal-title {
+  margin: 0;
+  color: #00c3ff;
+  font-weight: bold;
+}
+
+.diesel-modal-close {
+  background: transparent;
+  border: none;
+  color: #ccc;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 1rem;
+}
+
+.diesel-modal-close:hover {
+  color: #fff;
+}
+
+/* Form Styles */
+.diesel-form-group {
+  margin-bottom: 1rem;
+}
+
+.diesel-form-label {
+  color: #ccc;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.diesel-form-input {
+  padding: 0.5rem;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  background: #333;
+  color: #fff;
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+.diesel-form-input:focus {
+  border-color: #0A84FF;
+  outline: none;
+}
+
+.diesel-form-select {
+  padding: 0.5rem;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  background: #333;
+  color: #fff;
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+.diesel-form-select:focus {
+  border-color: #0A84FF;
+  outline: none;
+}
+
+/* Summary Card Styles */
+.diesel-summary-card {
+  background: #1e1e1e;
+  padding: 1rem 2rem;
+  border-radius: 12px;
+  margin: 1rem 0;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #f0f0f0;
+}
+
+.diesel-summary-total {
+  font-weight: bold;
+  color: #00ffcc;
+  font-size: 1.15rem;
+  margin-bottom: 0.6rem;
+  letter-spacing: 0.5px;
+}
+
+/* Filter Bar Styles */
+.diesel-filter-bar {
+  background: #181c1f;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+  padding: 2rem;
+  margin-bottom: 2rem;
+  max-width: 1200px;
+  margin: 0 auto 2rem auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.diesel-filter-actions {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.diesel-filter-search {
+  padding: 0.5rem;
+  width: 200px;
+  background: #222;
+  border: 1px solid #444;
+  color: white;
+  border-radius: 6px;
+}
+
+.diesel-filter-search:focus {
+  border-color: #0A84FF;
+  outline: none;
+}
+
+/* Date Filter Styles */
+.diesel-date-filter {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.1rem;
+}
+
+.diesel-date-input {
+  background: #222;
+  color: white;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 0.4rem;
+}
+
+.diesel-date-input:focus {
+  border-color: #0A84FF;
+  outline: none;
+}
+
+.diesel-date-label {
+  color: #ccc;
+}
+
+/* Load More Button */
+.diesel-load-more {
+  text-align: center;
+  margin-top: 1.5rem;
+}
+
+.diesel-load-more-button {
+  background: #007bff;
+  color: white;
+  font-weight: bold;
+  border: none;
+  border-radius: 8px;
+  padding: 0.7rem 2rem;
+  font-size: 1rem;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0,123,255,0.15);
+}
+
+.diesel-load-more-button:hover {
+  background: #0056b3;
+  transform: translateY(-1px);
+}
+
+.diesel-load-more-end {
+  color: #666;
+  font-size: 0.9rem;
+  padding: 1rem;
+  background: rgba(255,255,255,0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+/* Debug Info */
+.diesel-debug-info {
+  font-size: 0.8rem;
+  color: #666;
+  margin-bottom: 0.5rem;
+  font-family: monospace;
+}
+
+/* Loading States */
+.diesel-loading-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: #f5f5f7;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.diesel-loading-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  opacity: 0.8;
+}
+
+.diesel-loading-message {
+  color: #8e8e93;
+  font-size: 1.1rem;
+  font-weight: 500;
+}

@@ -13,7 +13,7 @@ export const useUserData = () => {
       setLoading(true);
       
       // Try cache first, then fetch fresh data
-      const result = await cacheUtils.smartFetchUserData('userData', async () => {
+      const result = await cacheUtils.smartFetchUser('userData', async () => {
         return await db.userData.toArray();
       });
       

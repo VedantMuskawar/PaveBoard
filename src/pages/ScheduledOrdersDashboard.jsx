@@ -41,11 +41,8 @@ export default function ScheduledOrdersDashboard() {
   const [summary, setSummary] = useState({ orders: 0, qty: 0, total: 0 });
   const navigate = useNavigate();
 
-  // Memoize organization ID for caching
-  const orgId = useMemo(() => {
-    const user = auth.currentUser;
-    return user?.uid || null;
-  }, [auth.currentUser]);
+  // Use the correct organization ID
+  const orgId = "K4Q6vPOuTcLPtlcEwdw0";
 
   const [headerCondensed, setHeaderCondensed] = useState(false);
 
@@ -88,7 +85,6 @@ export default function ScheduledOrdersDashboard() {
     return () => io.disconnect();
   }, [orders]);
 
-  const orgID = "K4Q6vPOuTcLPtlcEwdw0";
 
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(user => {
@@ -113,10 +109,12 @@ export default function ScheduledOrdersDashboard() {
 const fetchOrdersWithCache = useCallback(async (date) => {
   if (!date || !orgId) return [];
   
-  const cacheKey = `orders_${orgId}_${date}`;
-  
   try {
-    const result = await cacheUtils.smartFetchOrders(cacheKey, async () => {
+    // Use a custom cache key that includes the date
+    const dateStr = typeof date === 'string' ? date : ymdLocal(date);
+    const customCacheKey = `${orgId}_${dateStr}`;
+    
+    const result = await cacheUtils.smartFetchOrders(customCacheKey, async () => {
       const start = parseYMDLocal(date);
       const end = new Date(start);
       end.setHours(23, 59, 59, 999);
@@ -131,7 +129,14 @@ const fetchOrdersWithCache = useCallback(async (date) => {
       );
 
       const snapshot = await getDocs(q);
-      return snapshot.docs.map(doc => ({ ...doc.data(), docID: doc.id }));
+      return snapshot.docs.map(doc => {
+        const data = doc.data();
+        // Convert Firestore timestamps to ISO strings for caching
+        if (data.deliveryDate && typeof data.deliveryDate.toDate === 'function') {
+          data.deliveryDate = data.deliveryDate.toDate().toISOString();
+        }
+        return { ...data, docID: doc.id };
+      });
     });
     
     return result.data;
@@ -146,19 +151,54 @@ useEffect(() => {
   
   setLoading(true);
   fetchOrdersWithCache(selectedDate).then(ordersData => {
+    console.log('📦 Fetched orders data:', ordersData.length, 'orders');
+    console.log('📅 Selected date:', selectedDate);
+    console.log('📊 Sample order:', ordersData[0]);
     setOrders(ordersData);
     setLoading(false);
   });
 }, [selectedDate, fetchOrdersWithCache]);
 
-  const formatDateKey = (ts) => ymdLocal(ts.toDate());
+  const formatDateKey = (ts) => {
+    // Handle both Firestore timestamps and regular Date objects
+    if (ts && typeof ts.toDate === 'function') {
+      return ymdLocal(ts.toDate());
+    } else if (ts instanceof Date) {
+      return ymdLocal(ts);
+    } else if (typeof ts === 'string') {
+      return ymdLocal(new Date(ts));
+    }
+    return null;
+  };
 
-  const formatTime = (ts) => ts?.toDate?.().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+  const formatTime = (ts) => {
+    // Handle both Firestore timestamps and regular Date objects
+    if (ts && typeof ts.toDate === 'function') {
+      return ts.toDate().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+    } else if (ts instanceof Date) {
+      return ts.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+    } else if (typeof ts === 'string') {
+      return new Date(ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+    }
+    return '';
+  };
 
-  const filteredOrders = orders.filter(
-    o => formatDateKey(o.deliveryDate) === selectedDate &&
-      (!selectedVehicle || o.vehicleNumber === selectedVehicle)
-  );
+  const filteredOrders = orders.filter(o => {
+    const orderDate = formatDateKey(o.deliveryDate);
+    const matchesDate = orderDate === selectedDate;
+    const matchesVehicle = !selectedVehicle || o.vehicleNumber === selectedVehicle;
+    
+    if (!matchesDate) {
+      console.log('❌ Order date mismatch:', {
+        orderDate,
+        selectedDate,
+        deliveryDate: o.deliveryDate,
+        dmNumber: o.dmNumber
+      });
+    }
+    
+    return matchesDate && matchesVehicle;
+  });
 
   // Sort filteredOrders: Pending first, then Dispatched, then Delivered
   const statusPriority = (o) => {
@@ -419,7 +459,7 @@ useEffect(() => {
                               const dmQuery = query(
                                 collection(db, "DELIVERY_MEMOS"),
                                 where("dmNumber", "==", o.dmNumber),
-                                where("orgID", "==", orgID),
+                                where("orgID", "==", orgId),
                               );
 
                               const snapshot = await getDocs(dmQuery);

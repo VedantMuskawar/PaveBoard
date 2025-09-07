@@ -267,6 +267,22 @@ useEffect(() => {
     }
   });
   const deduplicatedOrders = Array.from(uniqueOrdersMap.values());
+  
+  console.log('🔄 Deduplication results:', {
+    sortedOrders: sortedOrders.length,
+    uniqueOrdersMap: uniqueOrdersMap.size,
+    deduplicatedOrders: deduplicatedOrders.length,
+    sampleDeduplicated: deduplicatedOrders[0]
+  });
+  
+  console.log('🎯 Rendering state:', {
+    loading,
+    ordersCount: orders.length,
+    filteredCount: filteredOrders.length,
+    deduplicatedCount: deduplicatedOrders.length,
+    selectedDate,
+    selectedVehicle
+  });
 
   return (
     <div className="apple-font-stack" style={{

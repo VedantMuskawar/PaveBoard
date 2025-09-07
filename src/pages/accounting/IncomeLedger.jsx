@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, Suspense, lazy } from "react";
 import { db } from "../../config/firebase";
 import { useOrganization } from "../../contexts/OrganizationContext";
 import {
@@ -8,7 +8,21 @@ import {
   getDocs,
   Timestamp,
 } from "firebase/firestore";
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
+// Temporary fallback for charts due to React compatibility issues
+const ChartFallback = ({ data, title }) => (
+  <div className="w-full h-full flex flex-col items-center justify-center bg-gray-700/30 rounded-lg p-4">
+    <div className="text-2xl mb-2">📊</div>
+    <div className="text-sm font-medium mb-2">{title}</div>
+    <div className="text-xs text-gray-400 text-center">
+      {data.map((item, index) => (
+        <div key={index} className="flex justify-between items-center mb-1">
+          <span>{item.name}:</span>
+          <span>₹{item.value.toLocaleString()}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+);
 
 // Import reusable UI components
 import { 
@@ -265,31 +279,7 @@ const IncomeLedger = ({ onBack }) => {
                   </div>
                   <div className="w-64 h-64">
                     {paymentModeData.length > 0 ? (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={paymentModeData}
-                            dataKey="value"
-                            nameKey="name"
-                            cx="50%"
-                            cy="50%"
-                            outerRadius={80}
-                            innerRadius={35}
-                            paddingAngle={4}
-                            labelLine={false}
-                            stroke="#0c1d25"
-                            strokeWidth={2}
-                          >
-                            {paymentModeData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={pieColors[index % pieColors.length]} />
-                            ))}
-                          </Pie>
-                          <Tooltip
-                            formatter={(value) => `₹${value.toLocaleString()}`}
-                            cursor={{ fill: 'rgba(255,255,255,0.1)' }}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
+                      <ChartFallback data={paymentModeData} title="Payment Methods" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-gray-700/30 rounded-lg">
                         <EmptyState

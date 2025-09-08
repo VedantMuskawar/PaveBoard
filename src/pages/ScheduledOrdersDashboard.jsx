@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 import DMButtons from "../components/DMButtons";
 import { generateDeliveryMemo, cancelDeliveryMemo } from "../components/DeliveryMemo";
-import { cacheUtils } from "../utils/cacheManager";
+// Removed cacheUtils import - using real-time listeners instead
 import "./ScheduledOrdersDashboard.css";
 
 // --- Local date helpers (avoid UTC shift) ---
@@ -105,64 +105,75 @@ export default function ScheduledOrdersDashboard() {
     setSelectedDate(ymdLocal(today));
   }, []);
 
-// Optimized orders fetching with intelligent caching
-const fetchOrdersWithCache = useCallback(async (date) => {
-  if (!date || !orgId) return [];
+// Real-time orders fetching with Firestore listeners
+const setupRealTimeListener = useCallback((date) => {
+  if (!date || !orgId) return () => {};
   
-  try {
-    // Use a custom cache key that includes the date
-    const dateStr = typeof date === 'string' ? date : ymdLocal(date);
-    const customCacheKey = `${orgId}_${dateStr}`;
-    
-    console.log('🔑 Cache key:', customCacheKey);
-    console.log('📅 Input date:', date, 'Formatted:', dateStr);
-    
-    const result = await cacheUtils.smartFetchOrders(customCacheKey, async () => {
-      const start = parseYMDLocal(date);
-      const end = new Date(start);
-      end.setHours(23, 59, 59, 999);
+  const start = parseYMDLocal(date);
+  const end = new Date(start);
+  end.setHours(23, 59, 59, 999);
 
-      const q = query(
-        collection(db, "SCH_ORDERS"),
-        where("orgID", "==", orgId),
-        where("deliveryDate", ">=", start),
-        where("deliveryDate", "<=", end),
-        orderBy("deliveryDate", "desc"),
-        limit(100)
-      );
+  console.log('🔄 Setting up real-time listener for date:', date);
+  console.log('📅 Date range:', start.toISOString(), 'to', end.toISOString());
 
-      const snapshot = await getDocs(q);
-      return snapshot.docs.map(doc => {
-        const data = doc.data();
-        // Convert Firestore timestamps to ISO strings for caching
-        if (data.deliveryDate && typeof data.deliveryDate.toDate === 'function') {
-          data.deliveryDate = data.deliveryDate.toDate().toISOString();
-        }
-        return { ...data, docID: doc.id };
-      });
+  const q = query(
+    collection(db, "SCH_ORDERS"),
+    where("orgID", "==", orgId),
+    where("deliveryDate", ">=", start),
+    where("deliveryDate", "<=", end),
+    orderBy("deliveryDate", "desc"),
+    limit(100)
+  );
+
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+    console.log('📡 Real-time update received:', snapshot.docs.length, 'orders');
+    console.log('📅 Query details:', {
+      orgId: orgId,
+      start: start.toISOString(),
+      end: end.toISOString(),
+      selectedDate: selectedDate
     });
     
-    return result.data;
-  } catch (error) {
-    console.error("Failed to fetch orders:", error);
-    return [];
-  }
+    const ordersData = snapshot.docs.map(doc => {
+      const data = doc.data();
+      console.log('📋 Sample order data:', {
+        docId: doc.id,
+        clientName: data.clientName,
+        vehicleNumber: data.vehicleNumber,
+        deliveryDate: data.deliveryDate,
+        deliveryDateType: typeof data.deliveryDate,
+        orgID: data.orgID
+      });
+      return { ...data, docID: doc.id };
+    });
+    
+    console.log('✅ Setting orders:', ordersData.length, 'orders');
+    setOrders(ordersData);
+    setLoading(false);
+  }, (error) => {
+    console.error("❌ Real-time listener error:", error);
+    setLoading(false);
+  });
+
+  return unsubscribe;
 }, [orgId]);
 
 useEffect(() => {
   if (!selectedDate) return;
   
   setLoading(true);
-  fetchOrdersWithCache(selectedDate).then(ordersData => {
-    console.log('📦 Fetched orders data:', ordersData.length, 'orders');
-    console.log('📅 Selected date:', selectedDate);
-    console.log('📊 Sample order:', ordersData[0]);
-    setOrders(ordersData);
-    setLoading(false);
-  });
-}, [selectedDate, fetchOrdersWithCache]);
+  console.log('🔄 Setting up real-time listener for selected date:', selectedDate);
+  
+  const unsubscribe = setupRealTimeListener(selectedDate);
+  
+  // Cleanup listener when component unmounts or date changes
+  return () => {
+    console.log('🧹 Cleaning up real-time listener');
+    unsubscribe();
+  };
+}, [selectedDate, setupRealTimeListener]);
 
-  const formatDateKey = (ts) => {
+  const formatDateKey = useCallback((ts) => {
     // Handle both Firestore timestamps and regular Date objects
     if (ts && typeof ts.toDate === 'function') {
       return ymdLocal(ts.toDate());
@@ -172,7 +183,7 @@ useEffect(() => {
       return ymdLocal(new Date(ts));
     }
     return null;
-  };
+  }, []);
 
   const formatTime = (ts) => {
     // Handle both Firestore timestamps and regular Date objects
@@ -186,32 +197,57 @@ useEffect(() => {
     return '';
   };
 
-  const filteredOrders = orders.filter(o => {
-    const orderDate = formatDateKey(o.deliveryDate);
-    const matchesDate = orderDate === selectedDate;
-    const matchesVehicle = !selectedVehicle || o.vehicleNumber === selectedVehicle;
-    
-    // Debug first few orders
-    if (orders.indexOf(o) < 3) {
-      console.log('🔍 Order filtering debug:', {
-        dmNumber: o.dmNumber,
+  const filteredOrders = useMemo(() => {
+    console.log('🔄 Starting filtering process:', {
+      totalOrders: orders.length,
+      selectedDate,
+      selectedVehicle,
+      ordersSample: orders.slice(0, 2).map(o => ({
+        clientName: o.clientName,
+        vehicleNumber: o.vehicleNumber,
         deliveryDate: o.deliveryDate,
-        orderDate,
-        selectedDate,
-        matchesDate,
         deliveryDateType: typeof o.deliveryDate
-      });
-    }
+      }))
+    });
     
-    return matchesDate && matchesVehicle;
-  });
-  
-  console.log('📊 Filtering results:', {
-    totalOrders: orders.length,
-    filteredOrders: filteredOrders.length,
-    selectedDate,
-    selectedVehicle
-  });
+    const filtered = orders.filter(o => {
+      const orderDate = formatDateKey(o.deliveryDate);
+      const matchesDate = orderDate === selectedDate;
+      const matchesVehicle = !selectedVehicle || o.vehicleNumber === selectedVehicle;
+      
+      // Debug all orders for first few
+      if (orders.indexOf(o) < 5) {
+        console.log('🔍 Order filtering debug:', {
+          dmNumber: o.dmNumber,
+          clientName: o.clientName,
+          deliveryDate: o.deliveryDate,
+          orderDate,
+          selectedDate,
+          matchesDate,
+          vehicleNumber: o.vehicleNumber,
+          selectedVehicle,
+          matchesVehicle,
+          deliveryDateType: typeof o.deliveryDate,
+          finalMatch: matchesDate && matchesVehicle
+        });
+      }
+      
+      return matchesDate && matchesVehicle;
+    });
+    
+    console.log('📊 Filtering results:', {
+      totalOrders: orders.length,
+      filteredOrders: filtered.length,
+      selectedDate,
+      selectedVehicle,
+      filteredSample: filtered.slice(0, 2).map(o => ({
+        clientName: o.clientName,
+        vehicleNumber: o.vehicleNumber
+      }))
+    });
+    
+    return filtered;
+  }, [orders, selectedDate, selectedVehicle]);
 
   // Sort filteredOrders: Pending first, then Dispatched, then Delivered
   const statusPriority = (o) => {
@@ -219,9 +255,19 @@ useEffect(() => {
     if (o.dispatchStatus) return 1;      // Dispatched middle
     return 0;                            // Pending first
   };
-  const sortedOrders = [...filteredOrders].sort((a, b) => statusPriority(a) - statusPriority(b));
+  const sortedOrders = useMemo(() => {
+    return [...filteredOrders].sort((a, b) => statusPriority(a) - statusPriority(b));
+  }, [filteredOrders]);
 
-  const vehicles = [...new Set(orders.filter(o => formatDateKey(o.deliveryDate) === selectedDate).map(o => o.vehicleNumber).filter(Boolean))];
+  // Get all unique vehicles for the selected date
+  const vehicles = useMemo(() => {
+    if (!selectedDate) return [];
+    return [...new Set(orders
+      .filter(o => formatDateKey(o.deliveryDate) === selectedDate)
+      .map(o => o.vehicleNumber)
+      .filter(Boolean)
+    )];
+  }, [orders, selectedDate]);
 
   // Memoize summary calculation to prevent unnecessary recalculations
   const summaryData = useMemo(() => {
@@ -245,32 +291,50 @@ useEffect(() => {
     setSummary(summaryData);
   }, [summaryData]);
 
-  // Deduplicate orders by clientName, vehicleNumber, and deliveryDate before rendering
-  const uniqueOrdersMap = new Map();
-  sortedOrders.forEach(order => {
-    const key = `${order.clientName}-${order.vehicleNumber}-${formatDateKey(order.deliveryDate)}`;
-    if (!uniqueOrdersMap.has(key)) {
-      uniqueOrdersMap.set(key, order);
-    } else {
-      // If duplicate found, keep the one with the most recent data or DM number
-      const existing = uniqueOrdersMap.get(key);
-      if (order.dmNumber && !existing.dmNumber) {
-        // Prefer order with DM number
-        uniqueOrdersMap.set(key, order);
-      } else if (order.dmNumber === "Cancelled" && existing.dmNumber !== "Cancelled") {
-        // Prefer cancelled status
-        uniqueOrdersMap.set(key, order);
-      } else if (order.updatedAt && existing.updatedAt && order.updatedAt > existing.updatedAt) {
-        // Prefer more recently updated
-        uniqueOrdersMap.set(key, order);
-      }
+  // Debug vehicle filter changes and validate selected vehicle
+  useEffect(() => {
+    console.log('🚛 Vehicle filter changed:', {
+      selectedVehicle,
+      availableVehicles: vehicles,
+      totalOrders: orders.length,
+      filteredOrders: filteredOrders.length,
+      selectedDate
+    });
+    
+    // Validate that selected vehicle exists in available vehicles
+    if (selectedVehicle && vehicles.length > 0 && !vehicles.includes(selectedVehicle)) {
+      console.warn('⚠️ Selected vehicle not found in available vehicles, resetting filter');
+      setSelectedVehicle(null);
     }
-  });
-  const deduplicatedOrders = Array.from(uniqueOrdersMap.values());
+  }, [selectedVehicle, vehicles, orders.length, filteredOrders.length, selectedDate]);
+
+  // Deduplicate orders by clientName, vehicleNumber, and deliveryDate before rendering
+  const deduplicatedOrders = useMemo(() => {
+    const uniqueOrdersMap = new Map();
+    sortedOrders.forEach(order => {
+      const key = `${order.clientName}-${order.vehicleNumber}-${formatDateKey(order.deliveryDate)}`;
+      if (!uniqueOrdersMap.has(key)) {
+        uniqueOrdersMap.set(key, order);
+      } else {
+        // If duplicate found, keep the one with the most recent data or DM number
+        const existing = uniqueOrdersMap.get(key);
+        if (order.dmNumber && !existing.dmNumber) {
+          // Prefer order with DM number
+          uniqueOrdersMap.set(key, order);
+        } else if (order.dmNumber === "Cancelled" && existing.dmNumber !== "Cancelled") {
+          // Prefer cancelled status
+          uniqueOrdersMap.set(key, order);
+        } else if (order.updatedAt && existing.updatedAt && order.updatedAt > existing.updatedAt) {
+          // Prefer more recently updated
+          uniqueOrdersMap.set(key, order);
+        }
+      }
+    });
+    return Array.from(uniqueOrdersMap.values());
+  }, [sortedOrders, formatDateKey]);
   
   console.log('🔄 Deduplication results:', {
     sortedOrders: sortedOrders.length,
-    uniqueOrdersMap: uniqueOrdersMap.size,
     deduplicatedOrders: deduplicatedOrders.length,
     sampleDeduplicated: deduplicatedOrders[0]
   });
@@ -387,12 +451,24 @@ useEffect(() => {
 
       {/* Orders Grid - Fixed 4 Columns */}
       <div className="orders-grid">
+        {(() => {
+          console.log('🎨 Render check:', { loading, deduplicatedOrdersLength: deduplicatedOrders.length, deduplicatedOrders });
+          return null;
+        })()}
         {loading ? (
           Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="card-surface loading-skeleton" />
           ))
+        ) : deduplicatedOrders.length === 0 ? (
+          <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '2rem', color: '#666' }}>
+            No orders found for the selected date and vehicle filter.
+          </div>
         ) : (
-          deduplicatedOrders.map((o, idx) => {
+          <>
+            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '1rem', background: 'rgba(255,255,255,0.1)', borderRadius: '10px', marginBottom: '1rem' }}>
+              🎯 DEBUG: Rendering {deduplicatedOrders.length} orders
+            </div>
+            {deduplicatedOrders.map((o, idx) => {
             // Determine card status class
             let cardStatusClass = "pending";
             if (o.deliveryStatus) {
@@ -541,7 +617,8 @@ useEffect(() => {
                 </div>
               </div>
             );
-          })
+          })}
+          </>
         )}
       </div>
     </div>

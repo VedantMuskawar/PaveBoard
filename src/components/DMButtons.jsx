@@ -139,7 +139,27 @@ export default function DMButtons({ order }) {
       dmNumber: "Cancelled", // ✅ LINK: Mark as "Cancelled" not null
     });
 
+    // Clear DM info and refresh the component state
     setDmInfo(null);
+    
+    // Force a re-fetch of DM status to ensure UI updates correctly
+    setTimeout(async () => {
+      const q = query(
+        collection(db, "DELIVERY_MEMOS"),
+        where("orderID", "==", order.docID || order.id),
+        where("status", "==", "active")
+      );
+      const snap = await getDocs(q);
+      if (!mounted.current) return;
+      if (snap.empty) {
+        setDmInfo(null); // Confirm no active DM exists
+      } else {
+        const activeDoc = snap.docs.find(doc => doc.data().status === "active");
+        if (activeDoc) {
+          setDmInfo({ id: activeDoc.id, ...activeDoc.data() });
+        }
+      }
+    }, 500); // Small delay to ensure database updates are processed
   };
 
   if (dmInfo) {

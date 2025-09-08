@@ -1,24 +1,22 @@
 import { useState, useEffect, useCallback } from 'react';
 import { db } from '../db/database.js';
-import { cacheUtils } from '../utils/cacheManager';
+// Removed cacheUtils import - using direct database access
 
 export const useUserData = () => {
   const [userData, setUserData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Load all user data with intelligent caching
+  // Load all user data directly from database
   const loadUserData = useCallback(async () => {
     try {
       setLoading(true);
+      console.log('🔄 Loading user data directly from database');
       
-      // Try cache first, then fetch fresh data
-      const result = await cacheUtils.smartFetchUser('userData', async () => {
-        return await db.userData.toArray();
-      });
-      
-      setUserData(result.data);
+      const data = await db.userData.toArray();
+      setUserData(data);
       setError(null);
+      console.log('📡 User data loaded:', data.length, 'users');
     } catch (err) {
       setError('Failed to load user data');
       console.error('Error loading user data:', err);
@@ -38,8 +36,6 @@ export const useUserData = () => {
       
       const id = await db.userData.add(newUser);
       
-      // Clear cache to force fresh data on next load
-      cacheUtils.clearUserCache('userData');
       await loadUserData(); // Refresh the list
       return id;
     } catch (err) {
@@ -58,8 +54,6 @@ export const useUserData = () => {
         lastUpdated: new Date()
       });
       
-      // Clear cache to force fresh data on next load
-      cacheUtils.clearUserCache('userData');
       await loadUserData(); // Refresh the list
     } catch (err) {
       setError('Failed to update user data');
@@ -73,8 +67,6 @@ export const useUserData = () => {
     try {
       await db.userData.delete(id);
       
-      // Clear cache to force fresh data on next load
-      cacheUtils.clearUserCache('userData');
       await loadUserData(); // Refresh the list
     } catch (err) {
       setError('Failed to delete user data');

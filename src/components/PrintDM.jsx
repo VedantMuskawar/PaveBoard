@@ -157,7 +157,7 @@ const PrintDM = forwardRef(({ dmNumber, isOpen = true, onClose }, ref) => {
               <div style={styles.wrapper} className="wrapper">
                 <div style={styles.printPage}>
                   <div style={styles.ticket} className="ticket">
-                    <img src="/src/watermark.png" alt="Watermark" style={styles.watermark} />
+                    <img src="/watermark.png" alt="Watermark" style={styles.watermark} />
                     <div style={{ textAlign: "center", fontSize: "11px", fontWeight: "bold", color: "#b22222" }}>🚩 जय श्री राम 🚩</div>
                     <div style={styles.branding}>
                       <div style={styles.companyName}>LAKSHMEE INTELLIGENT TECHNOLOGIES</div>
@@ -174,13 +174,13 @@ const PrintDM = forwardRef(({ dmNumber, isOpen = true, onClose }, ref) => {
                         <div style={styles.qrSectionLarge}>
                           <div style={styles.qrCodeLarge}>
                             <img 
-                              src="/src/Payment QR.jpeg" 
+                              src="/Payment QR.jpeg" 
                               alt="Payment QR Code" 
                               style={styles.qrImageLarge}
                             />
                           </div>
-                          <div style={styles.qrLabelLarge}>Payment QR</div>
-                          <div style={styles.qrAmountLarge}>Scan to pay ₹{(dmData.productQuant * dmData.productUnitPrice).toLocaleString()}</div>
+                          <div style={styles.qrLabelLarge}>Lakshmee Intelligent Technologies</div>
+                          <div style={styles.qrAmountLarge}>Scan to pay ₹{(dmData.productQuaulent * dmData.productUnitPrice).toLocaleString()}</div>
                         </div>
                       </div>
                       <div style={styles.rightColumn}>
@@ -191,7 +191,20 @@ const PrintDM = forwardRef(({ dmNumber, isOpen = true, onClose }, ref) => {
                             <div><strong>Phone:</strong> <strong>{dmData.clientPhoneNumber || "N/A"}</strong></div>
                           </div>
                           <div style={styles.infoCol}>
-                            <div><strong>Date:</strong> {new Date(dmData.deliveryDate?.seconds * 1000).toLocaleDateString("en-GB")}</div>
+                            <div><strong>Date:</strong> {(() => {
+                              try {
+                                // Handle both Firestore timestamps and ISO strings
+                                if (dmData.deliveryDate?.seconds) {
+                                  return new Date(dmData.deliveryDate.seconds * 1000).toLocaleDateString("en-GB");
+                                } else if (dmData.deliveryDate) {
+                                  return new Date(dmData.deliveryDate).toLocaleDateString("en-GB");
+                                }
+                                return "N/A";
+                              } catch (error) {
+                                console.error("Date formatting error:", error);
+                                return "N/A";
+                              }
+                            })()}</div>
                             <div><strong>Vehicle:</strong> {dmData.vehicleNumber}</div>
                             <div><strong>Driver:</strong> {dmData.driverName || "N/A"}</div>
                           </div>
@@ -226,7 +239,7 @@ const PrintDM = forwardRef(({ dmNumber, isOpen = true, onClose }, ref) => {
                 </div>
                 <div style={styles.printPage}>
                   <div style={{ ...styles.ticket, backgroundColor: "#e0e0e0" }} className="ticket">
-                    <img src="/src/watermark.png" alt="Watermark" style={styles.watermark} />
+                    <img src="/watermark.png" alt="Watermark" style={styles.watermark} />
                     <div style={{ textAlign: "center", fontSize: "11px", fontWeight: "bold", color: "#b22222" }}>🚩 जय श्री राम 🚩</div>
                     <div style={styles.branding}>
                       <div style={styles.companyName}>LAKSHMEE INTELLIGENT TECHNOLOGIES</div>
@@ -243,12 +256,12 @@ const PrintDM = forwardRef(({ dmNumber, isOpen = true, onClose }, ref) => {
                         <div style={styles.qrSectionLarge}>
                           <div style={styles.qrCodeLarge}>
                             <img 
-                              src="/src/Payment QR.jpeg" 
+                              src="/Payment QR.jpeg" 
                               alt="Payment QR Code" 
                               style={styles.qrImageLarge}
                             />
                           </div>
-                          <div style={styles.qrLabelLarge}>Payment QR</div>
+                          <div style={styles.qrLabelLarge}>Lakshmee Intelligent Technologies</div>
                           <div style={styles.qrAmountLarge}>Scan to pay ₹{(dmData.productQuant * dmData.productUnitPrice).toLocaleString()}</div>
                         </div>
                       </div>
@@ -260,7 +273,20 @@ const PrintDM = forwardRef(({ dmNumber, isOpen = true, onClose }, ref) => {
                             <div><strong>Phone:</strong> <strong>{dmData.clientPhoneNumber || "N/A"}</strong></div>
                           </div>
                           <div style={styles.infoCol}>
-                            <div><strong>Date:</strong> {new Date(dmData.deliveryDate?.seconds * 1000).toLocaleDateString("en-GB")}</div>
+                            <div><strong>Date:</strong> {(() => {
+                              try {
+                                // Handle both Firestore timestamps and ISO strings
+                                if (dmData.deliveryDate?.seconds) {
+                                  return new Date(dmData.deliveryDate.seconds * 1000).toLocaleDateString("en-GB");
+                                } else if (dmData.deliveryDate) {
+                                  return new Date(dmData.deliveryDate).toLocaleDateString("en-GB");
+                                }
+                                return "N/A";
+                              } catch (error) {
+                                console.error("Date formatting error:", error);
+                                return "N/A";
+                              }
+                            })()}</div>
                             <div><strong>Vehicle:</strong> {dmData.vehicleNumber}</div>
                             <div><strong>Driver:</strong> {dmData.driverName || "N/A"}</div>
                           </div>
@@ -539,7 +565,7 @@ const styles = {
     border: "none"
   },
   qrLabelLarge: {
-    fontSize: "16px",
+    fontSize: "14px",
     fontWeight: "bold",
     color: "#000",
     textAlign: "center"

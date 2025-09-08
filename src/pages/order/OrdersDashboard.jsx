@@ -1,11 +1,11 @@
 // OrdersDashboard.jsx - Version 2.0 with caching and role-based access
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import { collection, query, where, getDocs, orderBy, limit, startAfter, doc, updateDoc, addDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "../../config/firebase";
+import { collection, query, where, getDocs, orderBy, limit, startAfter, doc, updateDoc, addDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { db, auth } from "../../config/firebase";
 import { useNavigate } from "react-router-dom";
 import toast from 'react-hot-toast';
 import { useOrganization } from "../../contexts/OrganizationContext";
-import { cacheUtils } from "../../utils/cacheManager";
+// Removed cacheUtils import - using real-time listeners instead
 import * as XLSX from 'xlsx';
 import "./OrdersDashboard.css";
 
@@ -72,83 +72,148 @@ function OrdersDashboard({ onBack }) {
   const navigate = useNavigate();
 
 
-  // Mock wallet initialization (replace with actual wallet context)
+  // Initialize wallet and role detection
   useEffect(() => {
-    setTimeout(() => {
-      setWallet({ 
-        uid: "mock-uid", 
-        name: "Mock User",
-        role: 1 // 0 = Admin, 1 = Manager
-      });
-      setIsAdmin(false);
-      setIsManager(true);
+    const initializeWallet = () => {
+      // Check if user is authenticated
+      const currentUser = auth.currentUser;
+      
+      if (currentUser) {
+        // For now, we'll determine role based on user ID or email
+        // You can modify this logic based on your actual user management system
+        const userEmail = currentUser.email || '';
+        const userId = currentUser.uid;
+        
+        // Check if user is admin (you can customize this logic)
+        const isAdminUser = userEmail.includes('admin') || 
+                           userEmail.includes('Admin') || 
+                           userId === 'WOUE7OitsnR9QnGJplUO6YdMTK53'; // Your admin user ID
+        
+        setWallet({ 
+          uid: userId, 
+          name: currentUser.displayName || currentUser.email || "User",
+          email: currentUser.email,
+          role: isAdminUser ? 0 : 1 // 0 = Admin, 1 = Manager
+        });
+        
+        setIsAdmin(isAdminUser);
+        setIsManager(!isAdminUser);
+        
+        console.log('🔐 User role detected:', {
+          email: userEmail,
+          userId: userId,
+          isAdmin: isAdminUser,
+          isManager: !isAdminUser
+        });
+      } else {
+        // Fallback for unauthenticated users
+        setWallet({ 
+          uid: "guest", 
+          name: "Guest User",
+          role: 2 // 2 = Guest/Member
+        });
+        setIsAdmin(false);
+        setIsManager(false);
+      }
+      
       setWalletLoading(false);
-    }, 1000);
+    };
+    
+    // Initialize immediately
+    initializeWallet();
+    
+    // Listen for auth state changes
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user) {
+        const userEmail = user.email || '';
+        const userId = user.uid;
+        
+        const isAdminUser = userEmail.includes('admin') || 
+                           userEmail.includes('Admin') || 
+                           userId === 'WOUE7OitsnR9QnGJplUO6YdMTK53';
+        
+        setWallet({ 
+          uid: userId, 
+          name: user.displayName || user.email || "User",
+          email: user.email,
+          role: isAdminUser ? 0 : 1
+        });
+        
+        setIsAdmin(isAdminUser);
+        setIsManager(!isAdminUser);
+        
+        console.log('🔄 Auth state changed - Role updated:', {
+          email: userEmail,
+          userId: userId,
+          isAdmin: isAdminUser,
+          isManager: !isAdminUser
+        });
+      } else {
+        setWallet(null);
+        setIsAdmin(false);
+        setIsManager(false);
+      }
+      setWalletLoading(false);
+    });
+    
+    return () => unsubscribe();
   }, []);
 
   // Load orders with smart caching
   useEffect(() => {
     if (!wallet?.uid || !orgID) return;
     
-    const loadOrders = async () => {
-      setLoading(true);
-      try {
-        // Define fetch function for fresh data
-        const fetchOrdersFromFirebase = async () => {
-          const ordersRef = collection(db, "DELIVERY_MEMOS");
-          let q = query(
-            ordersRef,
-            where("orgID", "==", orgID),
-            limit(1000) // Fetch more to allow proper sorting
-          );
-          
-          const snapshot = await getDocs(q);
-          return snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data(),
-            // Ensure status is properly set
-            status: doc.data().status || (doc.data().dmNumber === "Cancelled" ? "cancelled" : "active")
-          }));
-        };
-
-        // Use smart fetch with caching
-        const result = await cacheUtils.smartFetchOrders(orgID, fetchOrdersFromFirebase);
-        
-        // Sort orders by DM number
-        let ordersData = result.data.sort((a, b) => {
-          const aNum = parseInt(a.dmNumber) || 0;
-          const bNum = parseInt(b.dmNumber) || 0;
-          return sortOrder === "asc" ? aNum - bNum : bNum - aNum;
-        });
-        
-        setOrders(ordersData);
-        
-        // Apply pagination
-        const startIndex = (currentPage - 1) * rowsPerPage;
-        const endIndex = startIndex + rowsPerPage;
-        const paginatedData = ordersData.slice(startIndex, endIndex);
-        setPaginatedOrders(paginatedData);
-
-        // Show cache status to user
-        if (result.fromCache) {
-          toast.success(`📦 Orders loaded from cache (${ordersData.length} orders)`);
-        } else {
-          toast.success(`🔄 Orders loaded from Firebase (${ordersData.length} orders)`);
-        }
-        
-        } catch (error) {
-        console.error("Error loading orders:", error);
-        toast.error("Failed to load orders from Firebase");
-        
-        // Set empty arrays on error
-        setOrders([]);
-        setPaginatedOrders([]);
-      } finally {
-        setLoading(false);
-      }
+    setLoading(true);
+    console.log('🔄 Setting up real-time listener for orders, orgID:', orgID);
+    
+    const ordersRef = collection(db, "DELIVERY_MEMOS");
+    const q = query(
+      ordersRef,
+      where("orgID", "==", orgID),
+      limit(1000) // Fetch more to allow proper sorting
+    );
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      console.log('📡 Real-time orders update received:', snapshot.docs.length, 'orders');
+      
+      const ordersData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        // Ensure status is properly set
+        status: doc.data().status || (doc.data().dmNumber === "Cancelled" ? "cancelled" : "active")
+      }));
+      
+      // Sort orders by DM number
+      const sortedOrders = ordersData.sort((a, b) => {
+        const aNum = parseInt(a.dmNumber) || 0;
+        const bNum = parseInt(b.dmNumber) || 0;
+        return sortOrder === "asc" ? aNum - bNum : bNum - aNum;
+      });
+      
+      setOrders(sortedOrders);
+      
+      // Apply pagination
+      const startIndex = (currentPage - 1) * rowsPerPage;
+      const endIndex = startIndex + rowsPerPage;
+      const paginatedData = sortedOrders.slice(startIndex, endIndex);
+      setPaginatedOrders(paginatedData);
+      
+      setLoading(false);
+      toast.success(`📡 Orders updated in real-time (${sortedOrders.length} orders)`);
+      
+    }, (error) => {
+      console.error("Real-time listener error:", error);
+      toast.error("Failed to load orders from Firebase");
+      setOrders([]);
+      setPaginatedOrders([]);
+      setLoading(false);
+    });
+    
+    // Cleanup listener when component unmounts or dependencies change
+    return () => {
+      console.log('🧹 Cleaning up orders real-time listener');
+      unsubscribe();
     };
-
-    loadOrders();
   }, [wallet?.uid, orgID, currentPage, sortOrder]);
 
 
@@ -266,8 +331,7 @@ function OrdersDashboard({ onBack }) {
           : order
       ));
 
-      // Clear orders cache since data has changed
-      cacheUtils.clearOrdersCache(orgID);
+      // Real-time listener will automatically update the UI
       
       toast.success(`DM #${selectedDM.dmNumber} cancelled by ${isAdmin ? 'admin' : 'manager'}.`);
       setShowCancelModal(false);
@@ -622,6 +686,24 @@ function OrdersDashboard({ onBack }) {
         roleDisplay={isAdmin ? "Administrator" : isManager ? "Manager" : "Member"}
       />
 
+      {/* Debug Role Information */}
+      {wallet && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mx-8 mb-4">
+          <div className="text-sm text-blue-800">
+            <strong>🔐 Role Debug:</strong> 
+            <span className="ml-2">
+              {isAdmin ? "✅ Admin" : isManager ? "👤 Manager" : "❌ No Access"} 
+            </span>
+            <span className="ml-4 text-blue-600">
+              User: {wallet.name} ({wallet.email})
+            </span>
+            <span className="ml-4 text-blue-600">
+              UID: {wallet.uid}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Main Content */}
       <div className="w-full" style={{ marginTop: "1.5rem", padding: "0 2rem" }}>
         {/* Filter Bar */}
@@ -826,4 +908,4 @@ function OrdersDashboard({ onBack }) {
   );
 }
  
- export default OrdersDashboard;ot 
+ export default OrdersDashboard;

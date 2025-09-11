@@ -34,3 +34,6 @@ export { default as SectionCard } from './SectionCard';
 export { default as DashboardHeader } from './DashboardHeader';
 export { default as ProfileModal } from './ProfileModal';
 export { default as AdminSettingsModal } from './AdminSettingsModal';
+export { default as ErrorBoundary } from './ErrorBoundary';
+export { default as Checkbox } from './Checkbox';
+export { default as NumberInput } from './NumberInput';

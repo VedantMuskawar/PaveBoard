@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { cacheUtils } from '../utils/cacheManager';
+import cacheManager from '../utils/cacheManager';
 
 const OrganizationContext = createContext();
 
@@ -22,9 +22,8 @@ export const OrganizationProvider = ({ children }) => {
       try {
         const orgData = JSON.parse(cachedOrg);
         setSelectedOrganization(orgData);
-        console.log('📦 Loaded organization from cache');
       } catch (error) {
-        console.error('❌ Failed to load organization from cache:', error);
+        // Silent fail for cache loading
       }
     }
     setIsLoading(false);
@@ -35,8 +34,7 @@ export const OrganizationProvider = ({ children }) => {
     // Cache the selected organization
     if (org) {
       localStorage.setItem('selectedOrganization', JSON.stringify(org));
-      cacheUtils.cacheOrganization(org.orgID, org);
-      console.log('✅ Organization cached');
+      cacheManager.set(`org_${org.orgID}`, org);
     }
   };
 

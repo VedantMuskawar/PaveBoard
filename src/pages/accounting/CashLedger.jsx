@@ -74,7 +74,7 @@ const CashLedger = ({ onBack }) => {
       
       setLastApprovalUpdate(new Date());
     } catch (error) {
-      console.error('Error saving approval to Firestore:', error);
+      // Error saving approval to Firestore
     } finally {
       setIsApprovalLoading(false);
     }
@@ -132,6 +132,7 @@ const CashLedger = ({ onBack }) => {
   const [approvalDocId, setApprovalDocId] = useState(null);
   const [isApprovalLoading, setIsApprovalLoading] = useState(false);
   const [lastApprovalUpdate, setLastApprovalUpdate] = useState(null);
+  const [databaseReadCount, setDatabaseReadCount] = useState(0);
 
   // Load existing approvals and set up real-time listener
   useEffect(() => {
@@ -161,8 +162,7 @@ const CashLedger = ({ onBack }) => {
         }
       },
       (error) => {
-        console.error('Error listening to approval changes:', error);
-        // Fallback: reset approval state
+        // Error listening to approval changes - resetting approval state
         setApprovedRows(new Set());
         setSelectAll(false);
       }
@@ -180,6 +180,8 @@ const CashLedger = ({ onBack }) => {
       const orgID = selectedOrg?.orgID || "K4Q6vPOuTcLPtlcEwdw0";
       const startDate = new Date(selectedDate + "T00:00:00");
       const endDate = new Date(selectedDate + "T23:59:59");
+      
+      let readCount = 0;
 
       const ordersQuery = query(
         collection(db, SCH_ORDERS),
@@ -188,6 +190,7 @@ const CashLedger = ({ onBack }) => {
         where("deliveryDate", "<=", endDate)
       );
       const ordersSnapshot = await getDocs(ordersQuery);
+      readCount += ordersSnapshot.docs.length;
       const orders = ordersSnapshot.docs.map(doc => {
         const data = doc.data();
         const mode = data.toAccount || "-";
@@ -210,6 +213,7 @@ const CashLedger = ({ onBack }) => {
         where("date", "<=", endDate)
       );
       const transactionsSnapshot = await getDocs(transactionsQuery);
+      readCount += transactionsSnapshot.docs.length;
       const transactions = transactionsSnapshot.docs.map(doc => {
         const data = doc.data();
         const mode = data.toAccount || "-";
@@ -232,6 +236,7 @@ const CashLedger = ({ onBack }) => {
         where("date", "<=", endDate)
       );
       const expensesSnapshot = await getDocs(expensesQuery);
+      readCount += expensesSnapshot.docs.length;
       const expenses = expensesSnapshot.docs.map(doc => {
         const data = doc.data();
         return {
@@ -248,6 +253,10 @@ const CashLedger = ({ onBack }) => {
       const allRows = [...orders, ...transactions, ...expenses];
       allRows.sort((a, b) => a.date - b.date); // sort by date
       setLedgerRows(allRows);
+      setDatabaseReadCount(readCount);
+      
+      // Debug log for database reads
+      console.log(`📊 CashLedger Database Reads: ${readCount} documents (Orders: ${orders.length}, Transactions: ${transactions.length}, Expenses: ${expenses.length})`);
     };
 
     fetchData();
@@ -256,7 +265,6 @@ const CashLedger = ({ onBack }) => {
   // Check if organization is selected
   useEffect(() => {
     if (!selectedOrg) {
-      console.error("No organization selected");
       return;
     }
   }, [selectedOrg]);
@@ -399,12 +407,13 @@ const CashLedger = ({ onBack }) => {
             </tbody>
             <tfoot>
               <tr className="footer-row">
-                {isAdmin && <td></td>}
-                <td><b>Total</b></td>
-                <td><b>{formatINR(totalExpense)}</b></td>
-                <td><b>{formatINR(totalIncome)}</b></td>
-                <td><b>{formatINR(totalCredit)}</b></td>
-                <td></td>
+                {isAdmin && <td className="footer-checkbox-cell"></td>}
+                <td className="footer-date-cell"></td>
+                <td className="footer-label-cell"><b>Total</b></td>
+                <td className="footer-value-cell"><b>{formatINR(totalExpense)}</b></td>
+                <td className="footer-value-cell"><b>{formatINR(totalIncome)}</b></td>
+                <td className="footer-value-cell"><b>{formatINR(totalCredit)}</b></td>
+                <td className="footer-mode-cell"></td>
               </tr>
             </tfoot>
           </table>

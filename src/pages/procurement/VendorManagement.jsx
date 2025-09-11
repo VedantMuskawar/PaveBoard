@@ -66,10 +66,12 @@ const VendorManagement = ({ onBack }) => {
   const orgID = selectedOrg?.orgID || "K4Q6vPOuTcLPtlcEwdw0";
   const orgName = selectedOrg?.orgName || "LIT";
   
+  // Database read count tracking
+  const [readCount, setReadCount] = useState(0);
+
   // Check if organization is selected
   useEffect(() => {
     if (!selectedOrg) {
-      console.error("No organization selected");
       return;
     }
   }, [selectedOrg]);
@@ -95,14 +97,6 @@ const VendorManagement = ({ onBack }) => {
       
       setIsAdmin(roleNumber === 0);
       setIsManager(roleNumber === 1);
-      
-      console.log('🔐 Role Detection:', {
-        orgRole: selectedOrg.role,
-        userRole: userRole,
-        roleNumber: roleNumber,
-        isAdmin: roleNumber === 0,
-        isManager: roleNumber === 1
-      });
     }
   }, [selectedOrg]);
 
@@ -118,17 +112,16 @@ const VendorManagement = ({ onBack }) => {
       const unsubscribe = onSnapshot(q, (snap) => {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setVendors(rows);
+        setReadCount(prev => prev + 1);
         if (rows.length && !selectedVendorForLedger) {
           setSelectedVendorForLedger(rows[0]);
         }
       }, (error) => {
-        console.error("Error fetching vendors:", error);
         toast.error("Failed to fetch vendors");
       });
       
       return unsubscribe;
     } catch (error) {
-      console.error("Error fetching vendors:", error);
       toast.error("Failed to fetch vendors");
     }
   };
@@ -147,11 +140,11 @@ const VendorManagement = ({ onBack }) => {
       const unsubscribe = onSnapshot(q, (snap) => {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setVendorLedger(rows);
+        setReadCount(prev => prev + 1);
       });
       
       return unsubscribe;
     } catch (error) {
-      console.error("Error fetching vendor ledger:", error);
       toast.error("Failed to fetch vendor ledger");
     }
   };
@@ -226,7 +219,6 @@ const VendorManagement = ({ onBack }) => {
       setShowVendorModal(false);
       
     } catch (error) {
-      console.error("Error saving vendor:", error);
       toast.error("Failed to save vendor");
     }
   };
@@ -237,7 +229,6 @@ const VendorManagement = ({ onBack }) => {
       await deleteDoc(doc(db, "VENDORS", vendor.id));
       toast.success("Vendor deleted successfully");
     } catch (error) {
-      console.error("Error deleting vendor:", error);
       toast.error("Failed to delete vendor");
     }
   };
@@ -312,6 +303,7 @@ const VendorManagement = ({ onBack }) => {
         onBack={onBack || (() => window.history.back())}
         role={isAdmin ? "admin" : "manager"}
         roleDisplay={isAdmin ? "👑 Admin" : "👔 Manager"}
+        subtitle={`📊 Reads: ${readCount}`}
       />
 
       {/* Main content container */}

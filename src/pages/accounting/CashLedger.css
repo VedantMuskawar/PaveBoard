@@ -294,6 +294,36 @@
   color: #E5E7EB;
 }
 
+.cash-ledger-table .footer-checkbox-cell {
+  text-align: center;
+  padding: 12px 10px;
+  width: 60px;
+}
+
+.cash-ledger-table .footer-date-cell {
+  text-align: center;
+  padding: 12px 10px;
+}
+
+.cash-ledger-table .footer-label-cell {
+  text-align: center;
+  padding: 12px 10px;
+  font-weight: 700;
+  color: #E5E7EB;
+}
+
+.cash-ledger-table .footer-value-cell {
+  text-align: center;
+  padding: 12px 10px;
+  font-weight: 700;
+  color: #E5E7EB;
+}
+
+.cash-ledger-table .footer-mode-cell {
+  text-align: center;
+  padding: 12px 10px;
+}
+
 .cash-ledger-checkbox {
   width: 18px;
   height: 18px;

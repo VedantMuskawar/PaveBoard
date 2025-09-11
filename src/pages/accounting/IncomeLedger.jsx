@@ -64,12 +64,12 @@ const IncomeLedger = ({ onBack }) => {
   const [paymentTotal, setPaymentTotal] = useState(0);
   const [deliveryMemos, setDeliveryMemos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [readCount, setReadCount] = useState(0);
 
 
   // Check if organization is selected
   useEffect(() => {
     if (!selectedOrg) {
-      console.error("No organization selected");
       return;
     }
   }, [selectedOrg]);
@@ -131,9 +131,9 @@ const IncomeLedger = ({ onBack }) => {
         getDocs(memoQuery),
       ]);
 
-      console.log("Read SCH_ORDERS:", orderSnap.size, "docs");
-      console.log("Read TRANSACTIONS:", transactionSnap.size, "docs");
-      console.log("Read DELIVERY_MEMOS:", memoSnap.size, "docs");
+      // Track total reads
+      const totalReads = orderSnap.size + transactionSnap.size + memoSnap.size;
+      setReadCount(totalReads);
 
       const memos = memoSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       setDeliveryMemos(memos);
@@ -224,6 +224,14 @@ const IncomeLedger = ({ onBack }) => {
               />
             ) : (
               <>
+                {/* Database Read Count */}
+                <div className="mb-4 p-3 bg-blue-900/20 border border-blue-500/30 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-blue-400">📊</span>
+                    <span className="text-sm text-blue-300">Database Reads: {readCount} documents</span>
+                  </div>
+                </div>
+
                 {/* Totals Summary */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                   <StatsCard
@@ -309,7 +317,6 @@ const IncomeLedger = ({ onBack }) => {
                   <ExportButton
                     onClick={() => {
                       // TODO: Implement export functionality
-                      console.log('Exporting order incomes...');
                     }}
                     exportType="excel"
                     size="sm"
@@ -374,7 +381,6 @@ const IncomeLedger = ({ onBack }) => {
                   <ExportButton
                     onClick={() => {
                       // TODO: Implement export functionality
-                      console.log('Exporting payment incomes...');
                     }}
                     exportType="excel"
                     size="sm"

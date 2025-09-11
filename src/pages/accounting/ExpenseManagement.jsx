@@ -13,13 +13,16 @@ import {
   increment,
   onSnapshot,
   orderBy,
-  limit
+  limit,
+  runTransaction
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../config/firebase";
 import { toast } from "react-hot-toast";
 import { useAuth } from "../../hooks/useAuth";
 import { useOrganization } from "../../contexts/OrganizationContext";
+import { EmployeeService } from "../../services/employeeService";
+import { testExpenseManagement } from "./ExpenseManagementTest";
 import { 
   Button,
   Card,
@@ -33,7 +36,10 @@ import {
   EmptyState,
   PageHeader,
   SectionCard,
-  DieselPage
+  DieselPage,
+  FilterBar,
+  SummaryCard,
+  ConfirmationModal
 } from "../../components/ui";
 import './ExpenseManagement.css';
 
@@ -48,15 +54,21 @@ const ExpensesManagement = ({ onBack }) => {
   
   // State
   const [showExpenseModal, setShowExpenseModal] = useState(false);
-  const [labours, setLabours] = useState([]);
-  const [filteredLabours, setFilteredLabours] = useState([]);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [employees, setEmployees] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+  const [filteredEmployees, setFilteredEmployees] = useState([]);
   const [pendingPayments, setPendingPayments] = useState([]);
-  const [selectedLabour, setSelectedLabour] = useState(null);
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [expenseToEdit, setExpenseToEdit] = useState(null);
+  const [expenseToDelete, setExpenseToDelete] = useState(null);
+  const [loading, setLoading] = useState(false);
   
   // Form states
-  const [expenseType, setExpenseType] = useState("LABOUR");
-  const [labourID, setLabourID] = useState("");
-  const [labourSearch, setLabourSearch] = useState("");
+  const [expenseType, setExpenseType] = useState("EMPLOYEE");
+  const [employeeID, setEmployeeID] = useState("");
+  const [employeeSearch, setEmployeeSearch] = useState("");
   const [paymentType, setPaymentType] = useState("wages");
   const [toAccount, setToAccount] = useState("CASH");
   const [amount, setAmount] = useState("");
@@ -110,6 +122,11 @@ const ExpensesManagement = ({ onBack }) => {
   useEffect(() => {
     fetchPendingPayments();
     fetchVendors();
+    fetchEmployees();
+    fetchAccounts();
+    
+    // Run system test
+    testExpenseManagement();
   }, [orgID]);
 
   // Refetch expenses when date filter changes
@@ -243,58 +260,126 @@ const ExpensesManagement = ({ onBack }) => {
 
   // Handle expense type changes
   useEffect(() => {
-    if (expenseType === "LABOUR" && selectedLabour) {
-      // Update description when expense type changes to LABOUR and labour is selected
-      setDescription(`Wage payment for ${selectedLabour.name}`);
+    if (expenseType === "EMPLOYEE" && selectedEmployee) {
+      // Update description when expense type changes to EMPLOYEE and employee is selected
+      setDescription(`Wage payment for ${selectedEmployee.name}`);
     } else if (expenseType === "OTHER") {
       // Clear description for other expenses
       setDescription("");
     }
-  }, [expenseType, selectedLabour]);
+  }, [expenseType, selectedEmployee]);
 
-  // Handle labour search input
-  const handleLabourSearch = (e) => {
+  // Handle employee search input
+  const handleEmployeeSearch = (e) => {
     const searchTerm = e.target.value;
-    setLabourSearch(searchTerm);
+    setEmployeeSearch(searchTerm);
     
-    if (searchTerm.length >= 2) {
-      fetchLabours(searchTerm);
+    if (searchTerm.length >= 1) {
+      filterEmployees(searchTerm);
     } else {
-      setFilteredLabours([]);
+      setFilteredEmployees([]);
     }
   };
 
-
-
-  // Fetch labours
-  const fetchLabours = async (searchTerm = "") => {
-    try {
-      if (!searchTerm || searchTerm.length < 2) {
-        setFilteredLabours([]);
-        return;
+  // Handle click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!event.target.closest('.employee-search-container')) {
+        setFilteredEmployees([]);
       }
+    };
 
-      const q = query(
-        collection(db, "LABOURS"),
-        where("orgID", "==", orgID),
-        orderBy("name", "asc"),
-        limit(20)
-      );
-      
-      const snapshot = await getDocs(q);
-      const rows = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-      
-      // Filter by search term
-      const filtered = rows.filter(labour => 
-        labour.name.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-      
-      setFilteredLabours(filtered);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+
+
+  // Fetch employees
+  const fetchEmployees = async () => {
+    try {
+      console.log('🔄 Fetching employees for orgID:', orgID);
+      setLoading(true);
+      const data = await EmployeeService.getEmployees(orgID);
+      console.log('✅ Fetched employees:', data.length, 'employees');
+      setEmployees(data);
     } catch (error) {
-      console.error("Error fetching labours:", error);
-      toast.error("Failed to fetch labours");
-      setFilteredLabours([]);
+      console.error("❌ Error fetching employees:", error);
+      toast.error("Failed to fetch employees");
+      setEmployees([]);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  // Fetch accounts
+  const fetchAccounts = async () => {
+    try {
+      console.log('🔄 Fetching accounts for orgID:', orgID);
+      const data = await EmployeeService.getAccounts(orgID);
+      console.log('✅ Fetched accounts:', data.length, 'accounts');
+      setAccounts(data);
+    } catch (error) {
+      console.error("❌ Error fetching accounts:", error);
+      toast.error("Failed to fetch accounts");
+      setAccounts([]);
+    }
+  };
+
+  // Filter employees and accounts based on search term
+  const filterEmployees = (searchTerm) => {
+    console.log('🔍 Filtering employees and accounts:', { 
+      searchTerm, 
+      totalEmployees: employees.length, 
+      totalAccounts: accounts.length 
+    });
+    
+    const results = [];
+    
+    // First, add accounts that match the search term
+    if (accounts && accounts.length > 0) {
+      const filteredAccounts = accounts.filter(account => {
+        const nameMatch = account.name?.toLowerCase().includes(searchTerm.toLowerCase());
+        return nameMatch;
+      });
+      
+      // Convert accounts to employee-like objects for display
+      filteredAccounts.forEach(account => {
+        results.push({
+          id: account.id,
+          name: account.name,
+          labourID: `ACCOUNT-${account.id.slice(-4)}`,
+          currentBalance: account.currentBalance,
+          accountId: account.id,
+          accountName: account.name,
+          accountType: account.accountType,
+          memberIds: account.memberIds,
+          isAccount: true
+        });
+      });
+    }
+    
+    // Then, add individual employees (only those without accounts)
+    if (employees && employees.length > 0) {
+      const individualEmployees = employees.filter(employee => !employee.accountId);
+      const filteredEmployees = individualEmployees.filter(employee => {
+        const nameMatch = employee.name?.toLowerCase().includes(searchTerm.toLowerCase());
+        const idMatch = employee.labourID?.toLowerCase().includes(searchTerm.toLowerCase());
+        return nameMatch || idMatch;
+      });
+      
+      filteredEmployees.forEach(employee => {
+        results.push({
+          ...employee,
+          isAccount: false
+        });
+      });
+    }
+    
+    console.log('✅ Filtered results:', results.length, 'matches (accounts + individual employees)');
+    setFilteredEmployees(results);
   };
 
   // Fetch vendors for raw material expenses
@@ -384,6 +469,8 @@ const ExpensesManagement = ({ onBack }) => {
   // Close modal function
   const closeModal = () => {
     setShowExpenseModal(false);
+    setShowEditModal(false);
+    setExpenseToEdit(null);
     // Reset date to today when closing modal
     const today = new Date();
     const year = today.getFullYear();
@@ -426,19 +513,18 @@ const ExpensesManagement = ({ onBack }) => {
     }
   };
 
-  // Handle labour selection
-  const handleLabourSelect = (e) => {
-    const selectedLabourID = e.target.value;
+  // Handle employee selection
+  const handleEmployeeSelect = (item) => {
+    setEmployeeID(item.id);
+    setSelectedEmployee(item);
+    setEmployeeSearch(item.name);
+    setFilteredEmployees([]);
     
-    setLabourID(selectedLabourID);
-    if (selectedLabourID) {
-      const labour = labours.find(l => l.labourID === selectedLabourID);
-      setSelectedLabour(labour);
-      // Auto-fill description for labour payment
-      setDescription(`Wage payment for ${labour.name}`);
+    // Auto-fill description based on whether it's an account or individual employee
+    if (item.isAccount) {
+      setDescription(`Payment for ${item.name} (Combined Account)`);
     } else {
-      setSelectedLabour(null);
-      setDescription("");
+      setDescription(`Wage payment for ${item.name}`);
     }
   };
 
@@ -455,9 +541,9 @@ const ExpensesManagement = ({ onBack }) => {
         return;
       }
 
-      // Additional validation for labour payments
-      if (expenseType === "LABOUR" && !labourID) {
-        toast.error("Please select a labour for labour payment");
+      // Additional validation for employee payments
+      if (expenseType === "EMPLOYEE" && !employeeID) {
+        toast.error("Please select an employee for employee payment");
         return;
       }
 
@@ -481,7 +567,7 @@ const ExpensesManagement = ({ onBack }) => {
 
       // Prepare expense data
       const expenseData = {
-        amount: Number(amount),
+        amount: Number(amount), // Store as rupees in EXPENSES collection
         category: expenseType,
         date: new Date(date), // Store date as Date object
         description: description.trim(),
@@ -496,16 +582,19 @@ const ExpensesManagement = ({ onBack }) => {
 
 
 
-      // Add labour-specific information for labour payments
-      if (expenseType === "LABOUR" && selectedLabour) {
-        expenseData.labourID = labourID;
-        expenseData.labourName = selectedLabour.name;
-        expenseData.paymentType = paymentType; // Use paymentType state
-        expenseData.labourType = selectedLabour.labourType || "Production";
-        expenseData.previousBalance = selectedLabour.currentBalance || 0;
-        expenseData.newBalance = (selectedLabour.currentBalance || 0) + Number(amount);
-
-
+      // Add employee-specific information for employee payments
+      if (expenseType === "EMPLOYEE" && selectedEmployee) {
+        expenseData.employeeID = employeeID;
+        expenseData.employeeName = selectedEmployee.name;
+        expenseData.labourID = selectedEmployee.labourID;
+        expenseData.paymentType = paymentType;
+        expenseData.employeeTags = selectedEmployee.employeeTags || [];
+        expenseData.previousBalance = selectedEmployee.currentBalance || 0; // Store as paisa
+        expenseData.newBalance = (selectedEmployee.currentBalance || 0) - EmployeeService.formatMoneyToPaise(Number(amount)); // Store as paisa
+        expenseData.accountId = selectedEmployee.accountId;
+        expenseData.accountName = selectedEmployee.accountName;
+        expenseData.isAccount = selectedEmployee.isAccount;
+        expenseData.memberIds = selectedEmployee.memberIds;
       }
 
 
@@ -516,68 +605,134 @@ const ExpensesManagement = ({ onBack }) => {
       // Update expense ID
       await updateDoc(expenseRef, { expenseID: expenseRef.id });
 
-              // Handle labour payment specific logic
-        if (expenseType === "LABOUR" && selectedLabour) {
-          // Update labour's current balance
-          // For LABOUR payment, we DECREMENT currentBalance (reduce what we owe them)
-          const labourRef = doc(db, "LABOURS", selectedLabour.id);
-          await updateDoc(labourRef, {
-            currentBalance: increment(-Number(amount)), // Decrement by making it negative
+              // Handle employee payment specific logic
+        if (expenseType === "EMPLOYEE" && selectedEmployee) {
+          if (selectedEmployee.isAccount) {
+            // COMBINED ACCOUNT EXPENSE LOGIC
+            
+            // 1. Update employeeAccount document: currentBalance - amount (in paisa)
+            const accountRef = doc(db, "employeeaccounts", selectedEmployee.id);
+            const accountAmountPaise = EmployeeService.formatMoneyToPaise(Number(amount));
+            
+            await updateDoc(accountRef, {
+              currentBalance: increment(-accountAmountPaise), // Store as paisa
             updatedAt: serverTimestamp(),
           });
 
-                  // Create labour ledger entry
-          const labourLedgerData = {
-            labourID: labourID,
-            labourName: selectedLabour.name,
-            transactionType: "debit", // We owe labour
-            amount: Number(amount),
-            date: new Date(date), // Store date as Date object
+            // 2. Update individual employee documents: currentBalance - amount/(splitRule)
+            const memberPromises = selectedEmployee.memberIds.map(async (memberId) => {
+              const memberRef = doc(db, "employees", memberId);
+              const memberDoc = await getDoc(memberRef);
+              
+              if (memberDoc.exists()) {
+                const memberData = memberDoc.data();
+                let splitAmount = 0;
+                
+                // Calculate split based on splitRule
+                if (selectedEmployee.splitRule?.type === "equal") {
+                  splitAmount = Number(amount) / selectedEmployee.memberIds.length;
+                } else if (selectedEmployee.splitRule?.type === "manual" && selectedEmployee.splitRule?.manualSplits) {
+                  splitAmount = selectedEmployee.splitRule.manualSplits[memberId] || 0;
+                } else {
+                  // Default to equal split
+                  splitAmount = Number(amount) / selectedEmployee.memberIds.length;
+                }
+                
+                const splitAmountPaise = EmployeeService.formatMoneyToPaise(splitAmount);
+                
+                await updateDoc(memberRef, {
+                  currentBalance: increment(-splitAmountPaise), // Store as paisa
+                  updatedAt: serverTimestamp(),
+                });
+                
+                return { memberId, memberData, splitAmount };
+              }
+              return null;
+            });
+            
+            const memberResults = await Promise.all(memberPromises);
+            const validMembers = memberResults.filter(m => m !== null);
+
+            // 3. Add single document in ACCOUNT_LEDGER: amount = amount (in paisa)
+            const accountLedgerData = {
+              accountID: employeeID,
+              accountName: selectedEmployee.name,
+              transactionType: "debit",
+              amount: accountAmountPaise, // Store as paisa
+              date: new Date(date),
             referenceType: "expense",
             referenceID: expenseRef.id,
-            description: `Labour payment - ${description.trim()}`,
-            previousBalance: selectedLabour.currentBalance || 0,
-            newBalance: (selectedLabour.currentBalance || 0) + Number(amount),
-            toAccount: toAccount, // Payment mode/account
+              description: `Account payment - ${description.trim()}`,
+              previousBalance: selectedEmployee.currentBalance || 0, // Store as paisa
+              newBalance: (selectedEmployee.currentBalance || 0) - accountAmountPaise, // Store as paisa
+              toAccount: toAccount,
             orgID: orgID,
         createdAt: serverTimestamp(),
           };
           
-          const labourLedgerRef = await addDoc(collection(db, "LABOUR_LEDGER"), labourLedgerData);
+            await addDoc(collection(db, "ACCOUNT_LEDGER"), accountLedgerData);
 
-                // If labour has linked labours, update their balances too
-        if (selectedLabour.isLinked && selectedLabour.linkedLabours?.length > 0) {
-          for (const linkedLabour of selectedLabour.linkedLabours) {
-            // Find the linked labour document
-            const linkedLabourDoc = labours.find(l => l.labourID === linkedLabour.labourID);
-            if (linkedLabourDoc) {
-              // Update linked labour balance
-              // For LABOUR payment, we DECREMENT currentBalance (reduce what we owe them)
-              const linkedLabourRef = doc(db, "LABOURS", linkedLabourDoc.id);
-              await updateDoc(linkedLabourRef, {
-                currentBalance: increment(-Number(amount)), // Decrement by making it negative
+            // 4. Add documents in EMPLOYEE_LEDGER: amount = amount/(splitRule) for each member
+            const employeeLedgerPromises = validMembers.map(async ({ memberId, memberData, splitAmount }) => {
+              const employeeLedgerData = {
+                employeeID: memberId,
+                employeeName: memberData.name,
+                labourID: memberData.labourID,
+                transactionType: "debit",
+                amount: splitAmountPaise, // Store as paisa
+                date: new Date(date),
+                referenceType: "expense",
+                referenceID: expenseRef.id,
+                description: `Account payment (split) - ${description.trim()}`,
+                previousBalance: memberData.currentBalance || 0, // Store as paisa
+                newBalance: (memberData.currentBalance || 0) - splitAmountPaise, // Store as paisa
+                toAccount: toAccount,
+                orgID: orgID,
+                accountID: employeeID, // Reference to the account
+                accountName: selectedEmployee.name,
+                createdAt: serverTimestamp(),
+              };
+              
+              return addDoc(collection(db, "EMPLOYEE_LEDGER"), employeeLedgerData);
+            });
+            
+            await Promise.all(employeeLedgerPromises);
+
+          } else {
+            // INDIVIDUAL EMPLOYEE EXPENSE LOGIC
+            
+            // 1. Update employee document: currentBalance - amount (in paisa)
+            const employeeRef = doc(db, "employees", selectedEmployee.id);
+            const employeeAmountPaise = EmployeeService.formatMoneyToPaise(Number(amount));
+            
+            await updateDoc(employeeRef, {
+              currentBalance: increment(-employeeAmountPaise), // Store as paisa
         updatedAt: serverTimestamp(),
       });
 
-              // Create ledger entry for linked labour
-              const linkedLedgerData = {
-                labourID: linkedLabour.labourID,
-                labourName: linkedLabour.name,
+            // 2. Add document in EMPLOYEE_LEDGER: amount = amount (in paisa)
+            const employeeLedgerData = {
+              employeeID: employeeID,
+              employeeName: selectedEmployee.name,
+              labourID: selectedEmployee.labourID,
                 transactionType: "debit",
-                amount: Number(amount),
+              amount: employeeAmountPaise, // Store as paisa
+              date: new Date(date),
                 referenceType: "expense",
                 referenceID: expenseRef.id,
-                description: `Linked labour payment - ${description.trim()}`,
-                previousBalance: linkedLabourDoc.currentBalance || 0,
-                newBalance: (linkedLabourDoc.currentBalance || 0) + Number(amount),
-                toAccount: toAccount, // Payment mode/account
+              description: `Employee payment - ${description.trim()}`,
+              previousBalance: selectedEmployee.currentBalance || 0, // Store as paisa
+              newBalance: (selectedEmployee.currentBalance || 0) - employeeAmountPaise, // Store as paisa
+              toAccount: toAccount,
                 orgID: orgID,
                 createdAt: serverTimestamp(),
               };
               
-              const linkedLedgerRef = await addDoc(collection(db, "LABOUR_LEDGER"), linkedLedgerData);
+            await addDoc(collection(db, "EMPLOYEE_LEDGER"), employeeLedgerData);
 
-            }
+            // If employee has an account, update the account balance too
+            if (selectedEmployee.accountId) {
+              await EmployeeService.updateAccountBalance(selectedEmployee.accountId);
           }
         }
       }
@@ -628,11 +783,11 @@ const ExpensesManagement = ({ onBack }) => {
       setDescription("");
       setImageFile(null);
       setImagePreview("");
-      setLabourID("");
-      setSelectedLabour(null);
-      setLabourSearch("");
+      setEmployeeID("");
+      setSelectedEmployee(null);
+      setEmployeeSearch("");
       setPaymentType("wages");
-      setExpenseType("LABOUR");
+      setExpenseType("EMPLOYEE");
       setSelectedVendor("");
       setRawMaterialType("RAW_MATERIAL_1");
       setQuantity("");
@@ -656,81 +811,529 @@ const ExpensesManagement = ({ onBack }) => {
 
   // Handle edit expense
   const handleEditExpense = (expense) => {
-    // TODO: Implement edit functionality
-    // For now, show a toast message
-    toast.info(`Edit functionality for "${expense.description}" will be implemented soon!`);
+    // Set the expense to edit
+    setExpenseToEdit(expense);
+    
+    // Populate form with existing data
+    setExpenseType(expense.category);
+    setAmount(expense.amount.toString());
+    setDescription(expense.description);
+    setDate(expense.date instanceof Date ? 
+      expense.date.toISOString().split('T')[0] : 
+      new Date(expense.date).toISOString().split('T')[0]
+    );
+    setToAccount(expense.toAccount || "");
+    
+    // Handle employee-specific fields
+    if (expense.category === "EMPLOYEE") {
+      setEmployeeID(expense.employeeID || "");
+      setPaymentType(expense.paymentType || "wages");
+      
+      // Set selected employee if it's an account
+      if (expense.isAccount) {
+        setSelectedEmployee({
+          id: expense.employeeID,
+          name: expense.employeeName,
+          isAccount: true,
+          currentBalance: expense.previousBalance,
+          memberIds: expense.memberIds || [],
+          splitRule: expense.splitRule || { type: "equal" }
+        });
+        setEmployeeSearch(expense.employeeName);
+      } else {
+        setSelectedEmployee({
+          id: expense.employeeID,
+          name: expense.employeeName,
+          labourID: expense.labourID,
+          isAccount: false,
+          currentBalance: expense.previousBalance,
+          accountId: expense.accountId
+        });
+        setEmployeeSearch(expense.employeeName);
+      }
+    }
+    
+    // Handle raw material fields
+    if (expense.category.includes("RAW_MATERIAL") || expense.category === "CEMENT" || expense.category === "CONSUMABLES") {
+      setSelectedVendor(expense.vendorID || "");
+      setQuantity(expense.quantity?.toString() || "");
+      setUnit(expense.unit || "kg");
+    }
+    
+    // Open edit modal
+    setShowEditModal(true);
+  };
+
+  // Handle update expense with airtight logic
+  const handleUpdateExpense = async (e) => {
+    e.preventDefault();
+    try {
+      if (!amount || !date || !description) {
+        toast.error("Please fill all required fields");
+        return;
+      }
+
+      // Additional validation for employee payments
+      if (expenseType === "EMPLOYEE" && !employeeID) {
+        toast.error("Please select an employee for employee payment");
+        return;
+      }
+
+      // Additional validation for raw material expenses
+      if ((expenseType === "RAW_MATERIAL_1" || expenseType === "RAW_MATERIAL_2" || expenseType === "CEMENT" || expenseType === "CONSUMABLES") && !selectedVendor) {
+        toast.error("Please select a vendor for raw material expense");
+        return;
+      }
+
+      if ((expenseType === "RAW_MATERIAL_1" || expenseType === "RAW_MATERIAL_2" || expenseType === "CEMENT" || expenseType === "CONSUMABLES") && !quantity) {
+        toast.error("Please enter quantity for raw material expense");
+        return;
+      }
+
+      setIsUploading(true);
+
+      // Upload image if selected
+      const { imageUrl, imageRef } = await handleImageUpload(imageFile);
+
+      // Prepare updated expense data
+      const updatedExpenseData = {
+        amount: Number(amount),
+        category: expenseType,
+        date: new Date(date),
+        description: description.trim(),
+        image: imageUrl || expenseToEdit.image,
+        imageRef: imageRef || expenseToEdit.imageRef,
+        orgID: orgID,
+        orgName: orgName,
+        updatedAt: serverTimestamp(),
+        toAccount: toAccount,
+        version: "1.1"
+      };
+
+      // Add employee-specific information for employee payments
+      if (expenseType === "EMPLOYEE" && selectedEmployee) {
+        updatedExpenseData.employeeID = employeeID;
+        updatedExpenseData.employeeName = selectedEmployee.name;
+        updatedExpenseData.labourID = selectedEmployee.labourID;
+        updatedExpenseData.paymentType = paymentType;
+        updatedExpenseData.employeeTags = selectedEmployee.employeeTags || [];
+        updatedExpenseData.previousBalance = selectedEmployee.currentBalance || 0; // Store as paisa
+        updatedExpenseData.newBalance = (selectedEmployee.currentBalance || 0) - EmployeeService.formatMoneyToPaise(Number(amount)); // Store as paisa
+        updatedExpenseData.accountId = selectedEmployee.accountId;
+        updatedExpenseData.accountName = selectedEmployee.accountName;
+        updatedExpenseData.isAccount = selectedEmployee.isAccount;
+        updatedExpenseData.memberIds = selectedEmployee.memberIds;
+      }
+
+      // Add vendor information for raw material expenses
+      if ((expenseType === "RAW_MATERIAL_1" || expenseType === "RAW_MATERIAL_2" || expenseType === "CEMENT" || expenseType === "CONSUMABLES") && selectedVendor) {
+        updatedExpenseData.vendorID = selectedVendor;
+        updatedExpenseData.vendorName = vendors.find(v => v.id === selectedVendor)?.name || "";
+        updatedExpenseData.rawMaterialType = expenseType;
+        updatedExpenseData.quantity = Number(quantity);
+        updatedExpenseData.unit = unit;
+      }
+
+      // Use transaction for atomic updates
+      await runTransaction(db, async (transaction) => {
+        const expenseRef = doc(db, "EXPENSES", expenseToEdit.id);
+        
+        // 1. First, reverse the original transaction (if it was an employee payment)
+        if (expenseToEdit.category === "EMPLOYEE") {
+          await reverseEmployeeTransaction(expenseToEdit, transaction);
+        }
+        
+        // 2. Update the expense document
+        transaction.update(expenseRef, updatedExpenseData);
+        
+        // 3. Apply the new transaction (if it's an employee payment)
+        if (expenseType === "EMPLOYEE" && selectedEmployee) {
+          await applyEmployeeTransaction(expenseToEdit.id, selectedEmployee, Number(amount), date, description, toAccount, transaction);
+        }
+      });
+
+      // Reset form and close modal
+      resetForm();
+      setShowEditModal(false);
+      setExpenseToEdit(null);
+      
+      // Force refresh of expenses table
+      fetchPendingPayments();
+      
+      toast.success("Expense updated successfully");
+    } catch (error) {
+      console.error("Error updating expense:", error);
+      toast.error("Failed to update expense");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  // Reverse employee transaction (for edit/delete)
+  const reverseEmployeeTransaction = async (expense, transaction) => {
+    if (expense.category !== "EMPLOYEE") return;
+
+    if (expense.isAccount) {
+      // Reverse account transaction
+      const accountRef = doc(db, "employeeaccounts", expense.employeeID);
+      const accountDoc = await getDoc(accountRef);
+      if (accountDoc.exists()) {
+        const adjustment = EmployeeService.formatMoneyToPaise(Number(expense.amount));
+        transaction.update(accountRef, {
+          currentBalance: increment(adjustment),
+          updatedAt: serverTimestamp()
+        });
+      }
+
+      // Delete account ledger entry
+      const accountLedgerQuery = query(
+        collection(db, "ACCOUNT_LEDGER"),
+        where("orgID", "==", orgID),
+        where("referenceID", "==", expense.id)
+      );
+      const accountLedgerSnapshot = await getDocs(accountLedgerQuery);
+      accountLedgerSnapshot.docs.forEach(doc => {
+        transaction.delete(doc.ref);
+      });
+
+      // Delete and reverse employee ledger entries
+      const employeeLedgerQuery = query(
+        collection(db, "EMPLOYEE_LEDGER"),
+        where("orgID", "==", orgID),
+        where("referenceID", "==", expense.id),
+        where("accountID", "==", expense.employeeID)
+      );
+      const employeeLedgerSnapshot = await getDocs(employeeLedgerQuery);
+      
+      employeeLedgerSnapshot.docs.forEach(async (ledgerDoc) => {
+        const ledgerData = ledgerDoc.data();
+        const memberRef = doc(db, "employees", ledgerData.employeeID);
+        const adjustment = EmployeeService.formatMoneyToPaise(ledgerData.amount);
+        
+        transaction.update(memberRef, {
+          currentBalance: increment(adjustment),
+          updatedAt: serverTimestamp()
+        });
+        
+        transaction.delete(ledgerDoc.ref);
+      });
+    } else {
+      // Reverse individual employee transaction
+      const employeeRef = doc(db, "employees", expense.employeeID);
+      const employeeDoc = await getDoc(employeeRef);
+      if (employeeDoc.exists()) {
+        const adjustment = EmployeeService.formatMoneyToPaise(Number(expense.amount));
+        transaction.update(employeeRef, {
+          currentBalance: increment(adjustment),
+          updatedAt: serverTimestamp()
+        });
+      }
+
+      // Delete employee ledger entry
+      const employeeLedgerQuery = query(
+        collection(db, "EMPLOYEE_LEDGER"),
+        where("orgID", "==", orgID),
+        where("referenceID", "==", expense.id)
+      );
+      const employeeLedgerSnapshot = await getDocs(employeeLedgerQuery);
+      employeeLedgerSnapshot.docs.forEach(doc => {
+        transaction.delete(doc.ref);
+      });
+    }
+  };
+
+  // Apply employee transaction (for edit/add)
+  const applyEmployeeTransaction = async (expenseId, selectedEmployee, amount, date, description, toAccount, transaction) => {
+    if (selectedEmployee.isAccount) {
+      // Apply account transaction
+      const accountRef = doc(db, "employeeaccounts", selectedEmployee.id);
+      const accountAmountPaise = EmployeeService.formatMoneyToPaise(amount);
+      
+      transaction.update(accountRef, {
+        currentBalance: increment(-accountAmountPaise),
+        updatedAt: serverTimestamp()
+      });
+
+      // Create account ledger entry
+      const accountLedgerRef = doc(collection(db, "ACCOUNT_LEDGER"));
+      const accountLedgerData = {
+        accountID: selectedEmployee.id,
+        accountName: selectedEmployee.name,
+        transactionType: "debit",
+        amount: EmployeeService.formatMoneyToPaise(amount), // Store as paisa
+        date: new Date(date),
+        referenceType: "expense",
+        referenceID: expenseId,
+        description: `Account payment - ${description.trim()}`,
+        previousBalance: selectedEmployee.currentBalance || 0, // Store as paisa
+        newBalance: (selectedEmployee.currentBalance || 0) - EmployeeService.formatMoneyToPaise(amount), // Store as paisa
+        toAccount: toAccount,
+        orgID: orgID,
+        createdAt: serverTimestamp(),
+      };
+      transaction.set(accountLedgerRef, accountLedgerData);
+
+      // Apply individual employee transactions
+      const memberPromises = selectedEmployee.memberIds.map(async (memberId) => {
+        const memberRef = doc(db, "employees", memberId);
+        const memberDoc = await getDoc(memberRef);
+        
+        if (memberDoc.exists()) {
+          const memberData = memberDoc.data();
+          let splitAmount = 0;
+          
+          if (selectedEmployee.splitRule?.type === "equal") {
+            splitAmount = amount / selectedEmployee.memberIds.length;
+          } else if (selectedEmployee.splitRule?.type === "manual" && selectedEmployee.splitRule?.manualSplits) {
+            splitAmount = selectedEmployee.splitRule.manualSplits[memberId] || 0;
+          } else {
+            splitAmount = amount / selectedEmployee.memberIds.length;
+          }
+          
+          const splitAmountPaise = EmployeeService.formatMoneyToPaise(splitAmount);
+          
+          transaction.update(memberRef, {
+            currentBalance: increment(-splitAmountPaise),
+            updatedAt: serverTimestamp()
+          });
+
+          // Create employee ledger entry
+          const employeeLedgerRef = doc(collection(db, "EMPLOYEE_LEDGER"));
+          const employeeLedgerData = {
+            employeeID: memberId,
+            employeeName: memberData.name,
+            labourID: memberData.labourID,
+            transactionType: "debit",
+            amount: splitAmountPaise, // Store as paisa
+            date: new Date(date),
+            referenceType: "expense",
+            referenceID: expenseId,
+            description: `Account payment (split) - ${description.trim()}`,
+            previousBalance: memberData.currentBalance || 0, // Store as paisa
+            newBalance: (memberData.currentBalance || 0) - splitAmountPaise, // Store as paisa
+            toAccount: toAccount,
+            orgID: orgID,
+            accountID: selectedEmployee.id,
+            accountName: selectedEmployee.name,
+            createdAt: serverTimestamp(),
+          };
+          transaction.set(employeeLedgerRef, employeeLedgerData);
+        }
+      });
+      
+      await Promise.all(memberPromises);
+    } else {
+      // Apply individual employee transaction
+      const employeeRef = doc(db, "employees", selectedEmployee.id);
+      const employeeAmountPaise = EmployeeService.formatMoneyToPaise(amount);
+      
+      transaction.update(employeeRef, {
+        currentBalance: increment(-employeeAmountPaise),
+        updatedAt: serverTimestamp()
+      });
+
+      // Create employee ledger entry
+      const employeeLedgerRef = doc(collection(db, "EMPLOYEE_LEDGER"));
+      const employeeLedgerData = {
+        employeeID: selectedEmployee.id,
+        employeeName: selectedEmployee.name,
+        labourID: selectedEmployee.labourID,
+        transactionType: "debit",
+        amount: EmployeeService.formatMoneyToPaise(amount), // Store as paisa
+        date: new Date(date),
+        referenceType: "expense",
+        referenceID: expenseId,
+        description: `Employee payment - ${description.trim()}`,
+        previousBalance: selectedEmployee.currentBalance || 0, // Store as paisa
+        newBalance: (selectedEmployee.currentBalance || 0) - EmployeeService.formatMoneyToPaise(amount), // Store as paisa
+        toAccount: toAccount,
+        orgID: orgID,
+        createdAt: serverTimestamp(),
+      };
+      transaction.set(employeeLedgerRef, employeeLedgerData);
+
+      // If employee has an account, update the account balance too
+      if (selectedEmployee.accountId) {
+        await EmployeeService.updateAccountBalance(selectedEmployee.accountId);
+      }
+    }
+  };
+
+  // Reset form function
+  const resetForm = () => {
+    setAmount("");
+    setDescription("");
+    setImageFile(null);
+    setImagePreview("");
+    setEmployeeID("");
+    setSelectedEmployee(null);
+    setEmployeeSearch("");
+    setPaymentType("wages");
+    setExpenseType("EMPLOYEE");
+    setSelectedVendor("");
+    setRawMaterialType("RAW_MATERIAL_1");
+    setQuantity("");
+    setUnit("kg");
+    setToAccount("CASH");
+    
+    // Reset date to today
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    setDate(`${year}-${month}-${day}`);
   };
 
   // Handle delete expense with proper cleanup
   const handleDeleteExpense = async (expense) => {
+    setExpenseToDelete(expense);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDeleteExpense = async () => {
     try {
-      if (!window.confirm(`Are you sure you want to delete this expense: "${expense.description}"?`)) {
-        return;
-      }
-
-
+      const expense = expenseToDelete;
 
       // 1. Delete from EXPENSES collection
       await deleteDoc(doc(db, "EXPENSES", expense.id));
 
-      // 2. If it's a LABOUR payment, handle LABOUR_LEDGER and LABOUR cleanup
-      if (expense.category === "LABOUR") {
+      // 2. If it's an EMPLOYEE payment, handle ledger cleanup and balance reversal
+      if (expense.category === "EMPLOYEE") {
         try {
-          // Check if entry exists in LABOUR_LEDGER
-          const ledgerQuery = query(
-            collection(db, "LABOUR_LEDGER"),
+          
+          // Check if it's an account payment or individual employee payment
+          if (expense.isAccount) {
+            // COMBINED ACCOUNT CLEANUP LOGIC
+            console.log("🏢 Cleaning up combined account payment...");
+            
+            // 1. Delete from ACCOUNT_LEDGER
+            const accountLedgerQuery = query(
+              collection(db, "ACCOUNT_LEDGER"),
             where("orgID", "==", orgID),
             where("referenceID", "==", expense.id)
           );
           
-          const ledgerSnapshot = await getDocs(ledgerQuery);
-          
-          if (!ledgerSnapshot.empty) {
-
-
-            // Delete from LABOUR_LEDGER
-            const deletePromises = ledgerSnapshot.docs.map(doc => deleteDoc(doc.ref));
-            await Promise.all(deletePromises);
+            const accountLedgerSnapshot = await getDocs(accountLedgerQuery);
             
-            // 3. Undo currentBalance change in LABOUR collection
-            if (expense.labourID) {
+            if (!accountLedgerSnapshot.empty) {
+              console.log("🗑️ Deleting account ledger entries:", accountLedgerSnapshot.size);
+              // Delete from ACCOUNT_LEDGER
+              const deletePromises = accountLedgerSnapshot.docs.map(doc => deleteDoc(doc.ref));
+              await Promise.all(deletePromises);
               
-              const labourRef = doc(db, "LABOURS", expense.labourID);
-              
-              // Get current labour data to calculate the adjustment
-              const labourDoc = await getDoc(labourRef);
-              if (labourDoc.exists()) {
-                const labourData = labourDoc.data();
+              // Reverse account balance change
+              if (expense.employeeID) {
+                const accountRef = doc(db, "employeeaccounts", expense.employeeID);
+                const adjustment = EmployeeService.formatMoneyToPaise(Number(expense.amount));
                 
-                // Since we're deleting, we need to reverse the original transaction
-                // If original was increment(amount), now we decrement(amount)
-                // If original was decrement(amount), now we increment(amount)
-                const adjustment = Number(expense.amount);
-                
-                await updateDoc(labourRef, {
+                await updateDoc(accountRef, {
                   currentBalance: increment(adjustment), // Reverse the original change
-                  totalEarned: increment(adjustment) // Reverse the total earned
+                  updatedAt: serverTimestamp()
                 });
-              } else {
-                // Labour document not found
+                
+                console.log("✅ Account balance reversed by:", adjustment);
               }
             } else {
-              // No labourID found in expense
+              console.log("⚠️ No account ledger entries found for expense:", expense.id);
+            }
+
+            // 2. Delete from EMPLOYEE_LEDGER (for split entries)
+            const employeeLedgerQuery = query(
+              collection(db, "EMPLOYEE_LEDGER"),
+              where("orgID", "==", orgID),
+              where("referenceID", "==", expense.id),
+              where("accountID", "==", expense.employeeID)
+            );
+            
+            const employeeLedgerSnapshot = await getDocs(employeeLedgerQuery);
+            
+            if (!employeeLedgerSnapshot.empty) {
+              console.log("🗑️ Deleting employee ledger entries:", employeeLedgerSnapshot.size);
+              
+              // Get the ledger entries to reverse individual employee balances
+              const ledgerEntries = employeeLedgerSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+              }));
+              
+              // Reverse individual employee balance changes
+              const memberReversalPromises = ledgerEntries.map(async (entry) => {
+                const memberRef = doc(db, "employees", entry.employeeID);
+                const adjustment = EmployeeService.formatMoneyToPaise(entry.amount);
+                
+                await updateDoc(memberRef, {
+                  currentBalance: increment(adjustment), // Reverse the original change
+                  updatedAt: serverTimestamp()
+                });
+                
+                console.log(`✅ Member ${entry.employeeName} balance reversed by:`, adjustment);
+              });
+              
+              await Promise.all(memberReversalPromises);
+              
+              // Delete the ledger entries
+              const deletePromises = employeeLedgerSnapshot.docs.map(doc => deleteDoc(doc.ref));
+              await Promise.all(deletePromises);
+              
+              console.log("✅ Employee ledger entries deleted");
+              } else {
+              console.log("⚠️ No employee ledger entries found for expense:", expense.id);
+              }
+            } else {
+            // Handle individual employee payment cleanup
+            console.log("👤 Cleaning up individual employee payment...");
+            
+            // Check if entry exists in EMPLOYEE_LEDGER
+            const employeeLedgerQuery = query(
+              collection(db, "EMPLOYEE_LEDGER"),
+              where("orgID", "==", orgID),
+              where("referenceID", "==", expense.id)
+            );
+            
+            const employeeLedgerSnapshot = await getDocs(employeeLedgerQuery);
+            
+            if (!employeeLedgerSnapshot.empty) {
+              console.log("🗑️ Deleting employee ledger entries:", employeeLedgerSnapshot.size);
+              // Delete from EMPLOYEE_LEDGER
+              const deletePromises = employeeLedgerSnapshot.docs.map(doc => deleteDoc(doc.ref));
+              await Promise.all(deletePromises);
+              
+              // Reverse employee balance change
+              if (expense.employeeID) {
+                const employeeRef = doc(db, "employees", expense.employeeID);
+                const adjustment = EmployeeService.formatMoneyToPaise(Number(expense.amount));
+                
+                await updateDoc(employeeRef, {
+                  currentBalance: increment(adjustment), // Reverse the original change
+                  updatedAt: serverTimestamp()
+                });
+                
+                console.log("✅ Employee balance reversed by:", adjustment);
+
+                // If employee has an account, update the account balance too
+                if (expense.accountId) {
+                  await EmployeeService.updateAccountBalance(expense.accountId);
+                  console.log("✅ Account balance updated for employee's account");
+                }
             }
           } else {
-            // No LABOUR_LEDGER entries found
+              console.log("⚠️ No employee ledger entries found for expense:", expense.id);
           }
+          }
+          
+          console.log("✅ Employee payment cleanup completed");
         } catch (error) {
-          console.error("❌ ERROR: Error cleaning up labour-related data:", error);
+          console.error("❌ ERROR: Error cleaning up employee-related data:", error);
           toast.warning("Expense deleted but cleanup failed");
         }
-      } else {
-        // Not a LABOUR expense
       }
 
-
-
       toast.success("Expense deleted successfully");
+      setShowDeleteModal(false);
+      setExpenseToDelete(null);
+      
+      // Force refresh of expenses table
+      fetchPendingPayments();
       
     } catch (error) {
       console.error("❌ Error deleting expense:", error);
@@ -806,8 +1409,12 @@ const ExpensesManagement = ({ onBack }) => {
 
   const getExpenseTypeLabel = (type) => {
     const labels = {
-      LABOUR: "Labour Payment",
-      RAW_MATERIAL: "Raw Material",
+      EMPLOYEE: "Employee Payment",
+      LABOUR: "Labour Payment", // Legacy support
+      RAW_MATERIAL_1: "Raw Material 1",
+      RAW_MATERIAL_2: "Raw Material 2",
+      CEMENT: "Cement",
+      CONSUMABLES: "Consumables",
       DIESEL: "Diesel",
       OTHER: "Other"
     };
@@ -863,25 +1470,63 @@ const ExpensesManagement = ({ onBack }) => {
       {/* Main content container with consistent spacing */}
       <div className="w-full" style={{ marginTop: "1.5rem", padding: "0 2rem" }}>
         <div className="max-w-7xl mx-auto">
-          {/* Unified Card Container */}
-          <Card className="overflow-x-auto" style={{ marginTop: "1rem" }}>
-            <div className="space-y-8">
-              {/* Add Expense Section */}
-              <div className="bg-gradient-to-br from-[rgba(25,25,27,0.8)] via-[rgba(20,20,22,0.6)] to-[rgba(25,25,27,0.8)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-3xl p-8 shadow-2xl hover:shadow-blue-500/30 hover:scale-[1.02] transition-all duration-500">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <SummaryCard
+              title="Total Expenses Today"
+              value={currency(filteredPendingPayments.reduce((sum, expense) => sum + (expense.amount || 0), 0))}
+              icon="💰"
+              color="blue"
+            />
+            <SummaryCard
+              title="Employee Payments"
+              value={currency(filteredPendingPayments.filter(e => e.category === "EMPLOYEE").reduce((sum, expense) => sum + (expense.amount || 0), 0))}
+              icon="👥"
+              color="green"
+            />
+            <SummaryCard
+              title="Material Expenses"
+              value={currency(filteredPendingPayments.filter(e => ["RAW_MATERIAL_1", "RAW_MATERIAL_2", "CEMENT", "CONSUMABLES"].includes(e.category)).reduce((sum, expense) => sum + (expense.amount || 0), 0))}
+              icon="📦"
+              color="orange"
+            />
+          </div>
+
+          {/* Filter Bar */}
+          <FilterBar>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 w-full">
                   <div>
-                    <h2 className="text-2xl font-extrabold text-gray-100 tracking-tight leading-tight flex items-center gap-3 mb-2">
-                      <span className="text-3xl filter drop-shadow-lg">💰</span>
-                      <span className="text-gray-200 font-semibold">Add New Expense</span>
-                    </h2>
-                    <p className="text-gray-400 text-sm">Record new business expenses with images and details</p>
+                <h2 className="text-xl font-bold text-white mb-1">Expense Management</h2>
+                <p className="text-gray-400 text-sm">Track and manage all business expenses</p>
                   </div>
+              <div className="flex gap-4 items-center">
+                <DatePicker
+                  value={selectedFilterDate}
+                  onChange={setSelectedFilterDate}
+                  className="w-40"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 text-xs font-semibold"
+                    onClick={async () => {
+                      console.log("🧪 Running manual test...");
+                      const results = await testExpenseManagement();
+                      if (results.errors.length === 0) {
+                        toast.success("All tests passed! System is working.");
+                      } else {
+                        toast.error(`Tests failed: ${results.errors.length} errors found`);
+                      }
+                    }}
+                  >
+                    🧪 Test System
+                  </Button>
                   <Button
                     variant="primary"
                     size="lg"
-                    className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shadow-lg hover:shadow-blue-500/25 transition-all duration-300 px-8 py-3 text-lg font-semibold"
+                    className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shadow-lg hover:shadow-blue-500/25 transition-all duration-300 px-6 py-2 text-sm font-semibold"
                     onClick={() => {
-                      // Reset date to today when opening modal
                       const today = new Date();
                       const year = today.getFullYear();
                       const month = String(today.getMonth() + 1).padStart(2, '0');
@@ -890,37 +1535,15 @@ const ExpensesManagement = ({ onBack }) => {
                       setShowExpenseModal(true);
                     }}
                   >
-                    ➕ Add Expense
+                    💰 Add Expense
                   </Button>
                 </div>
               </div>
-
-              {/* Recent Expenses Section */}
-              <div className="bg-gradient-to-br from-[rgba(25,25,27,0.8)] via-[rgba(20,20,22,0.6)] to-[rgba(25,25,27,0.8)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-3xl p-8 shadow-2xl">
-                {/* Section Header with Search Controls */}
-                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-8 pb-4 border-b border-white/20">
-                  <div>
-                    <h3 className="text-2xl font-extrabold text-gray-100 tracking-tight leading-tight flex items-center gap-3 mb-2">
-                      <span className="text-3xl filter drop-shadow-lg">📅</span>
-                      <span className="text-gray-200 font-semibold">
-                        {isAdmin || isManager ? "Recent Expenses (Today + Yesterday)" : "Today's Expenses"}
-                      </span>
-                    </h3>
-                    <p className="text-gray-400 text-sm">All expenses with date filter</p>
                   </div>
-                  
-                  {/* Date Filter Control */}
-                  <div className="flex justify-end">
-                    <div className="w-40">
-                      <DatePicker
-                        value={selectedFilterDate}
-                        onChange={setSelectedFilterDate}
-                        className="w-full"
-                      />
-                    </div>
-                  </div>
-                </div>
+          </FilterBar>
 
+          {/* Expenses Table */}
+          <Card className="overflow-x-auto" style={{ marginTop: "1rem" }}>
                 {filteredPendingPayments.length === 0 ? (
                   <EmptyState
                     icon="📅"
@@ -951,12 +1574,17 @@ const ExpensesManagement = ({ onBack }) => {
                       },
                       {
                         key: 'toAccount',
-                        label: 'Mode of Payment',
+                    label: 'Payment Mode',
                         render: (expense) => expense.toAccount || "—"
+                      },
+                  {
+                    key: 'date',
+                    label: 'Date',
+                    render: (expense) => safeFormatDate(expense.date)
                       },
                       {
                         key: 'image',
-                        label: 'Image',
+                    label: 'Receipt',
                         render: (expense) => expense.image ? (
                           <Button
                             variant="ghost"
@@ -970,7 +1598,7 @@ const ExpensesManagement = ({ onBack }) => {
                       },
                       ...(isAdmin || isManager ? [{
                         key: 'actions',
-                        label: isAdmin ? 'Actions (Admin: All Expenses)' : 'Request (Manager: Request Actions)',
+                    label: isAdmin ? 'Actions' : 'Actions (Today Only)',
                         render: (expense) => {
                           if (isAdmin) {
                             return (
@@ -1046,8 +1674,6 @@ const ExpensesManagement = ({ onBack }) => {
                     className="expenses-table"
                   />
                 )}
-            </div>
-            </div>
           </Card>
         </div>
       </div>
@@ -1065,9 +1691,9 @@ const ExpensesManagement = ({ onBack }) => {
                   <SelectField
                     label="📝 Category"
                     value={expenseType}
-                    onChange={(e) => setExpenseType(e.target.value)}
+                    onChange={(value) => setExpenseType(value)}
                     options={[
-                      { value: "LABOUR", label: "Labour Payment" },
+                      { value: "EMPLOYEE", label: "Employee Payment" },
                       { value: "RAW_MATERIAL_1", label: "Raw Material 1" },
                       { value: "RAW_MATERIAL_2", label: "Raw Material 2" },
                       { value: "CEMENT", label: "Cement" },
@@ -1077,43 +1703,67 @@ const ExpensesManagement = ({ onBack }) => {
                   />
                   <div className="form-group">
                     <div className="form-label">
-                      👤 Labour Name
+                      👤 Employee Name
                     </div>
-                    <div className="labour-search-container">
+                    <div className="employee-search-container">
                       <Input
                         type="text"
-                        value={labourSearch}
-                        onChange={handleLabourSearch}
-                        placeholder="Start typing to search labour..."
-                        required
+                        value={employeeSearch}
+                        onChange={handleEmployeeSearch}
+                        placeholder="Start typing to search employee..."
+                        required={expenseType === "EMPLOYEE"}
                       />
-                      {filteredLabours.length > 0 && (
-                        <div className="labour-dropdown">
-                          {filteredLabours.map(labour => (
+                      {(filteredEmployees.length > 0 || (employeeSearch.length === 0 && (employees.length > 0 || accounts.length > 0))) && (
+                        <div className="employee-dropdown">
+                          {(employeeSearch.length === 0 ? 
+                            // Show accounts first, then individual employees when no search
+                            [
+                              ...accounts.map(account => ({
+                                id: account.id,
+                                name: account.name,
+                                labourID: `ACCOUNT-${account.id.slice(-4)}`,
+                                currentBalance: account.currentBalance,
+                                accountId: account.id,
+                                accountName: account.name,
+                                accountType: account.accountType,
+                                memberIds: account.memberIds,
+                                isAccount: true
+                              })),
+                              ...employees.filter(emp => !emp.accountId).map(emp => ({ ...emp, isAccount: false }))
+                            ] : 
+                            filteredEmployees
+                          ).slice(0, 10).map(item => (
                             <div
-                              key={labour.labourID}
-                              className="labour-option"
-                              onClick={() => {
-                                setLabourID(labour.labourID);
-                                setSelectedLabour(labour);
-                                setLabourSearch(labour.name);
-                                setFilteredLabours([]);
-                                // Auto-fill description for labour payment
-                                setDescription(`Wage payment for ${labour.name}`);
-                              }}
+                              key={item.id}
+                              className="employee-option"
+                              onClick={() => handleEmployeeSelect(item)}
                             >
-                              <span className="labour-name">{labour.name}</span>
-                              {labour.isLinked && labour.linkedLabours?.length > 0 && (
-                                <span className="linked-indicator">
-                                  (Linked: {labour.linkedLabours.length + 1})
+                              <span className="employee-name">{item.name}</span>
+                              <span className="employee-id">({item.labourID})</span>
+                              {item.isAccount ? (
+                                <span className="account-indicator">
+                                  🏢 Combined Account ({item.memberIds?.length || 0} members)
+                                </span>
+                              ) : item.accountName ? (
+                                <span className="account-indicator">
+                                  📊 {item.accountName}
+                                </span>
+                              ) : (
+                                <span className="account-indicator">
+                                  👤 Individual Employee
                                 </span>
                               )}
                             </div>
                           ))}
+                          {(employees.length + accounts.length) > 10 && employeeSearch.length === 0 && (
+                            <div className="employee-option" style={{ fontStyle: 'italic', color: '#9ba3ae' }}>
+                              Showing first 10. Type to search...
+                            </div>
+                          )}
                         </div>
                       )}
                       {/* Current Balance Display */}
-                      {selectedLabour && (
+                      {selectedEmployee && (
                         <div style={{
                           marginTop: '8px',
                           padding: '8px 12px',
@@ -1123,10 +1773,10 @@ const ExpensesManagement = ({ onBack }) => {
                           fontSize: '14px',
                           color: '#495057'
                         }}>
-                          <strong>💰 Current Balance:</strong> ₹{selectedLabour.currentBalance?.toLocaleString() || '0'}
-                          {selectedLabour.linkedLabours && selectedLabour.linkedLabours.length > 0 && (
+                          <strong>💰 Current Balance:</strong> ₹{EmployeeService.formatMoney(selectedEmployee.currentBalance || 0).toLocaleString()}
+                          {selectedEmployee.accountName && (
                             <div style={{ fontSize: '12px', color: '#6c757d', marginTop: '4px' }}>
-                              <strong>🔗 Linked Labours:</strong> {selectedLabour.linkedLabours.length + 1} total accounts
+                              <strong>📊 Account:</strong> {selectedEmployee.accountName}
                             </div>
                           )}
                         </div>
@@ -1140,7 +1790,7 @@ const ExpensesManagement = ({ onBack }) => {
                       <SelectField
                         label="🏢 Vendor"
                         value={selectedVendor}
-                        onChange={(e) => setSelectedVendor(e.target.value)}
+                        onChange={(value) => setSelectedVendor(value)}
                         options={[
                           { value: "", label: "Select vendor..." },
                           ...vendors.map(v => ({ value: v.id, label: v.name }))
@@ -1182,13 +1832,13 @@ const ExpensesManagement = ({ onBack }) => {
                   />
           </div>
 
-          {/* Payment Type for Labour */}
-          {expenseType === "LABOUR" && (
+          {/* Payment Type for Employee */}
+          {expenseType === "EMPLOYEE" && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <SelectField
                       label="💳 Payment Type"
                       value={paymentType}
-                      onChange={(e) => setPaymentType(e.target.value)}
+                      onChange={(value) => setPaymentType(value)}
                       options={[
                         { value: "wages", label: "Wages" },
                         { value: "bonus", label: "Bonus" },
@@ -1200,7 +1850,7 @@ const ExpensesManagement = ({ onBack }) => {
                     <SelectField
                       label="🏦 Payment Mode"
                       value={toAccount}
-                      onChange={(e) => setToAccount(e.target.value)}
+                      onChange={(value) => setToAccount(value)}
                       options={[
                         { value: "CASH", label: "💵 CASH" },
                         { value: "HDFC LIT", label: "🏦 HDFC LIT" },
@@ -1218,15 +1868,15 @@ const ExpensesManagement = ({ onBack }) => {
             </div>
           )}
 
-          {/* Description for Labour */}
-          {expenseType === "LABOUR" && (
+          {/* Description for Employee */}
+          {expenseType === "EMPLOYEE" && (
             <div className="grid grid-cols-1 gap-6">
                     <Input
                       label="📝 Description"
                       type="text"
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      placeholder="Wage payment for [Labour Name]"
+                      placeholder="Wage payment for [Employee Name]"
                       required
                     />
             </div>
@@ -1264,8 +1914,8 @@ const ExpensesManagement = ({ onBack }) => {
             </div>
           )}
 
-          {/* Receipt Image for Non-Labour */}
-          {expenseType !== "LABOUR" && (
+          {/* Receipt Image for Non-Employee */}
+          {expenseType !== "EMPLOYEE" && (
             <div className="grid grid-cols-1 gap-6">
                     <div className="form-group">
                       <div className="form-label">📸 Receipt Image</div>
@@ -1305,8 +1955,8 @@ const ExpensesManagement = ({ onBack }) => {
             </div>
           )}
 
-          {/* Image Upload for Labour */}
-          {expenseType === "LABOUR" && (
+          {/* Image Upload for Employee */}
+          {expenseType === "EMPLOYEE" && (
             <div className="grid grid-cols-1 gap-6">
                     <div className="form-group">
                       <div className="form-label">📸 Receipt Image</div>
@@ -1346,21 +1996,41 @@ const ExpensesManagement = ({ onBack }) => {
             </div>
           )}
 
-          {/* Labour Information Display */}
-          {expenseType === "LABOUR" && selectedLabour && (
+          {/* Employee Information Display */}
+          {expenseType === "EMPLOYEE" && selectedEmployee && (
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
-                    <div className="labour-info-grid">
-                      <div className="labour-info-item">
+                    <div className="employee-info-grid">
+                      <div className="employee-info-item">
                         <span className="info-label">Current Balance:</span>
-                        <span className="info-value">{currency(selectedLabour.currentBalance || 0)}</span>
+                        <span className="info-value">{currency(EmployeeService.formatMoney(selectedEmployee.currentBalance || 0))}</span>
                       </div>
-                      {selectedLabour.isLinked && selectedLabour.linkedLabours?.length > 0 && (
-                        <div className="labour-info-item linked-labours">
-                          <span className="info-label">Linked Labours:</span>
-                          <div className="linked-labours-list">
-                            {selectedLabour.linkedLabours.map((linked, index) => (
-                              <span key={index} className="linked-labour-tag">
-                                {linked.name}
+                      <div className="employee-info-item">
+                        <span className="info-label">ID:</span>
+                        <span className="info-value">{selectedEmployee.labourID}</span>
+                      </div>
+                      {selectedEmployee.isAccount ? (
+                        <div className="employee-info-item">
+                          <span className="info-label">Type:</span>
+                          <span className="info-value">🏢 Combined Account ({selectedEmployee.memberIds?.length || 0} members)</span>
+                        </div>
+                      ) : selectedEmployee.accountName ? (
+                        <div className="employee-info-item">
+                          <span className="info-label">Account:</span>
+                          <span className="info-value">{selectedEmployee.accountName}</span>
+                        </div>
+                      ) : (
+                        <div className="employee-info-item">
+                          <span className="info-label">Type:</span>
+                          <span className="info-value">👤 Individual Employee</span>
+                        </div>
+                      )}
+                      {selectedEmployee.employeeTags && selectedEmployee.employeeTags.length > 0 && (
+                        <div className="employee-info-item">
+                          <span className="info-label">Tags:</span>
+                          <div className="employee-tags-list">
+                            {selectedEmployee.employeeTags.map((tag, index) => (
+                              <span key={index} className="employee-tag">
+                                {tag}
                               </span>
                             ))}
                           </div>
@@ -1389,6 +2059,245 @@ const ExpensesManagement = ({ onBack }) => {
           </div>
         </form>
       </Modal>
+
+      {/* EDIT EXPENSE MODAL */}
+      <Modal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        title="✏️ Edit Expense"
+        size="lg"
+      >
+        <form onSubmit={handleUpdateExpense} className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <SelectField
+              label="📝 Category"
+              value={expenseType}
+              onChange={(value) => setExpenseType(value)}
+              options={[
+                { value: "EMPLOYEE", label: "Employee Payment" },
+                { value: "RAW_MATERIAL_1", label: "Raw Material 1" },
+                { value: "RAW_MATERIAL_2", label: "Raw Material 2" },
+                { value: "CEMENT", label: "Cement" },
+                { value: "CONSUMABLES", label: "Consumables" },
+                { value: "OTHER", label: "Other" }
+              ]}
+            />
+            
+            {/* Employee Selection (same as add modal) */}
+            {expenseType === "EMPLOYEE" && (
+              <div className="form-group">
+                <div className="form-label">
+                  👤 Employee Name
+                </div>
+                <div className="employee-search-container">
+                  <Input
+                    type="text"
+                    value={employeeSearch}
+                    onChange={handleEmployeeSearch}
+                    placeholder="Start typing to search employee..."
+                    className="employee-search-input"
+                  />
+                  
+                  {/* Employee Dropdown */}
+                  {filteredEmployees.length > 0 && (
+                    <div className="employee-dropdown">
+                      {filteredEmployees.map((employee) => (
+                        <div
+                          key={employee.id}
+                          className="employee-option"
+                          onClick={() => handleEmployeeSelect(employee)}
+                        >
+                          <div className="employee-name">{employee.name}</div>
+                          <div className="employee-id">{employee.labourID || employee.id}</div>
+                          <div className="account-indicator">
+                            {employee.isAccount ? "🏢 Combined Account" : "👤 Individual Employee"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Current Balance Display */}
+                {selectedEmployee && (
+                  <div className="employee-info-grid">
+                    <div className="employee-info-item">
+                      <span className="employee-info-label">Current Balance:</span>
+                      <span className="employee-info-value">
+                        ₹{EmployeeService.formatMoney(selectedEmployee.currentBalance || 0).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="employee-info-item">
+                      <span className="employee-info-label">ID:</span>
+                      <span className="employee-info-value">{selectedEmployee.labourID || selectedEmployee.id}</span>
+                    </div>
+                    <div className="employee-info-item">
+                      <span className="employee-info-label">Type:</span>
+                      <span className="employee-info-value">
+                        {selectedEmployee.isAccount ? "Combined Account" : "Individual Employee"}
+                      </span>
+                    </div>
+                    {selectedEmployee.employeeTags && selectedEmployee.employeeTags.length > 0 && (
+                      <div className="employee-info-item">
+                        <span className="employee-info-label">Tags:</span>
+                        <div className="employee-tags">
+                          {selectedEmployee.employeeTags.map((tag, index) => (
+                            <span key={index} className="employee-tag">{tag}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Raw Material Fields (same as add modal) */}
+            {(expenseType === "RAW_MATERIAL_1" || expenseType === "RAW_MATERIAL_2" || expenseType === "CEMENT" || expenseType === "CONSUMABLES") && (
+              <>
+                <SelectField
+                  label="🏢 Vendor"
+                  value={selectedVendor}
+                  onChange={(value) => setSelectedVendor(value)}
+                  options={[
+                    { value: "", label: "Select vendor..." },
+                    ...vendors.map(v => ({ value: v.id, label: v.name }))
+                  ]}
+                  required
+                />
+                <Input
+                  label="📦 Quantity"
+                  type="number"
+                  step="0.01"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  placeholder="0.00"
+                  required
+                />
+                <SelectField
+                  label="📏 Unit"
+                  value={unit}
+                  onChange={(value) => setUnit(value)}
+                  options={[
+                    { value: "kg", label: "Kilograms (kg)" },
+                    { value: "tons", label: "Tons" },
+                    { value: "pieces", label: "Pieces" },
+                    { value: "bags", label: "Bags" },
+                    { value: "liters", label: "Liters" }
+                  ]}
+                />
+              </>
+            )}
+
+            {/* Payment Type for Employee */}
+            {expenseType === "EMPLOYEE" && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <SelectField
+                  label="💳 Payment Type"
+                  value={paymentType}
+                  onChange={(value) => setPaymentType(value)}
+                  options={[
+                    { value: "wages", label: "Wages" },
+                    { value: "bonus", label: "Bonus" },
+                    { value: "overtime", label: "Overtime" },
+                    { value: "advance", label: "Advance" },
+                    { value: "other", label: "Other" }
+                  ]}
+                />
+                <SelectField
+                  label="🏦 Payment Mode"
+                  value={toAccount}
+                  onChange={(value) => setToAccount(value)}
+                  options={[
+                    { value: "CASH", label: "💵 CASH" },
+                    { value: "HDFC LIT", label: "🏦 HDFC LIT" },
+                    { value: "HDFC V", label: "🏦 HDFC V" },
+                    { value: "SBI CC", label: "🏦 SBI CC" }
+                  ]}
+                  required
+                />
+                <DatePicker
+                  label="📅 Date"
+                  value={date}
+                  onChange={setDate}
+                  required
+                />
+              </div>
+            )}
+
+            <Input
+              label="💰 Amount"
+              type="number"
+              step="0.01"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0.00"
+              required
+            />
+
+            <Input
+              label="📝 Description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Enter expense description..."
+              required
+            />
+
+            <Input
+              label="📷 Receipt Image"
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files[0];
+                if (file) {
+                  setImageFile(file);
+                  const reader = new FileReader();
+                  reader.onload = (e) => setImagePreview(e.target.result);
+                  reader.readAsDataURL(file);
+                }
+              }}
+            />
+            {imagePreview && (
+              <div className="image-preview">
+                <img src={imagePreview} alt="Receipt preview" className="preview-image" />
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end space-x-4">
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={isUploading}
+              className="button-primary"
+            >
+              {isUploading ? "⏳ Updating..." : "✅ Update Expense"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary" 
+              onClick={() => setShowEditModal(false)}
+            >
+              ❌ Cancel
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      {expenseToDelete && (
+        <ConfirmationModal
+          isOpen={showDeleteModal}
+          onClose={() => setShowDeleteModal(false)}
+          title="Delete Expense"
+          message={`Are you sure you want to delete this expense: "${expenseToDelete.description}"? This action cannot be undone and will permanently remove the expense record.`}
+          onConfirm={confirmDeleteExpense}
+          onCancel={() => setShowDeleteModal(false)}
+          confirmText="Delete"
+          cancelText="Cancel"
+          confirmVariant="danger"
+        />
+      )}
     </DieselPage>
   );
 };

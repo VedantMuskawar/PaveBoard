@@ -1,15 +1,13 @@
-.vendor-management-page {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 100%);
-  color: #ffffff;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-}
+/* VendorManagement.css - Optimized styling matching Diesel Ledger */
 
+/* Main container styling */
 .main-container {
   max-width: 1400px;
   margin: 0 auto;
+  padding: 0 1rem;
 }
 
+/* Tabs styling - matching Diesel Ledger */
 .tabs-container {
   display: flex;
   background: rgba(255,255,255,0.05);
@@ -17,6 +15,8 @@
   padding: 4px;
   margin-bottom: 2rem;
   border: 1px solid rgba(255,255,255,0.1);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 .tab {
@@ -28,25 +28,33 @@
   transition: all 0.3s ease;
   font-weight: 500;
   color: #9ba3ae;
+  font-size: 0.9rem;
+  user-select: none;
 }
 
 .tab.active {
   background: rgba(10,132,255,0.2);
   color: #0a84ff;
   border: 1px solid rgba(10,132,255,0.3);
+  box-shadow: 0 2px 8px rgba(10,132,255,0.1);
 }
 
 .tab:hover:not(.active) {
   background: rgba(255,255,255,0.05);
   color: #ffffff;
+  transform: translateY(-1px);
 }
 
+/* Content section styling */
 .content-section {
   background: rgba(255,255,255,0.03);
   border-radius: 16px;
   padding: 2rem;
   border: 1px solid rgba(255,255,255,0.08);
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  margin-bottom: 2rem;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.1);
 }
 
 .section-header {
@@ -69,28 +77,14 @@
   font-size: 0.95rem;
 }
 
-.add-button {
-  background: linear-gradient(135deg, #0a84ff 0%, #0066cc 100%);
-  color: white;
-  border: none;
-  padding: 12px 24px;
-  border-radius: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 12px rgba(10,132,255,0.3);
-}
-
-.add-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(10,132,255,0.4);
-}
-
+/* Table styling - matching Diesel Ledger */
 .table-container {
   background: rgba(255,255,255,0.02);
   border-radius: 12px;
   border: 1px solid rgba(255,255,255,0.06);
   overflow: hidden;
+  margin-bottom: 2rem;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
 }
 
 .table-search {
@@ -132,18 +126,25 @@
   font-weight: 600;
   color: #ffffff;
   border-bottom: 1px solid rgba(255,255,255,0.06);
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .table td {
   padding: 16px;
   border-bottom: 1px solid rgba(255,255,255,0.06);
   color: #e1e5e9;
+  font-size: 0.9rem;
 }
 
 .table tr:hover {
   background: rgba(255,255,255,0.02);
+  transform: scale(1.001);
+  transition: all 0.2s ease;
 }
 
+/* Status styling */
 .status-credit {
   color: #32d74b;
   font-weight: 600;
@@ -154,6 +155,7 @@
   font-weight: 600;
 }
 
+/* Action buttons */
 .action-group {
   display: flex;
   gap: 8px;
@@ -185,12 +187,14 @@
   transform: translateY(-1px);
 }
 
+/* Empty state */
 .empty-state {
   text-align: center;
   padding: 3rem;
   color: #9ba3ae;
 }
 
+/* Vendor selector */
 .vendor-selector {
   background: rgba(255,255,255,0.05);
   border: 1px solid rgba(255,255,255,0.1);
@@ -201,6 +205,7 @@
   min-width: 250px;
 }
 
+/* Vendor balance display */
 .vendor-balance {
   background: rgba(10,132,255,0.1);
   border: 1px solid rgba(10,132,255,0.2);
@@ -223,6 +228,7 @@
   font-weight: 600;
 }
 
+/* Modal styling */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -235,6 +241,7 @@
   justify-content: center;
   z-index: 1000;
   backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .modal-content {
@@ -279,6 +286,7 @@
   color: #ffffff;
 }
 
+/* Form styling */
 .form-container {
   padding: 2rem;
 }
@@ -358,7 +366,16 @@
   box-shadow: 0 4px 12px rgba(50,215,75,0.3);
 }
 
+/* Responsive design */
 @media (max-width: 768px) {
+  .main-container {
+    padding: 0 0.5rem;
+  }
+  
+  .content-section {
+    padding: 1rem;
+  }
+  
   .form-row-3, .form-row-2 {
     grid-template-columns: 1fr;
   }
@@ -371,5 +388,15 @@
   
   .search-input {
     width: 100%;
+  }
+  
+  .table-container {
+    overflow-x: auto;
+  }
+  
+  .table th,
+  .table td {
+    padding: 12px 8px;
+    font-size: 0.8rem;
   }
 }

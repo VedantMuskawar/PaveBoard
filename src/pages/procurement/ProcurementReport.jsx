@@ -55,6 +55,9 @@ const ProcurementReports = ({ onBack }) => {
   const [selectedVendor, setSelectedVendor] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   
+  // Database read count tracking
+  const [readCount, setReadCount] = useState(0);
+  
   // Date range states
   const [startDate, setStartDate] = useState(() => {
     const today = new Date();
@@ -78,7 +81,6 @@ const ProcurementReports = ({ onBack }) => {
   // Check if organization is selected
   useEffect(() => {
     if (!selectedOrg) {
-      console.error("No organization selected");
       return;
     }
   }, [selectedOrg]);
@@ -98,14 +100,6 @@ const ProcurementReports = ({ onBack }) => {
       
       setIsAdmin(roleNumber === 0);
       setIsManager(roleNumber === 1);
-      
-      console.log('🔐 Role Detection:', {
-        orgRole: selectedOrg.role,
-        userRole: userRole,
-        roleNumber: roleNumber,
-        isAdmin: roleNumber === 0,
-        isManager: roleNumber === 1
-      });
     }
   }, [selectedOrg]);
 
@@ -123,6 +117,7 @@ const ProcurementReports = ({ onBack }) => {
       const vendorsUnsubscribe = onSnapshot(vendorsQuery, (snap) => {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setVendors(rows);
+        setReadCount(prev => prev + 1);
       });
 
       // Fetch procurement entries
@@ -134,6 +129,7 @@ const ProcurementReports = ({ onBack }) => {
       const procurementUnsubscribe = onSnapshot(procurementQuery, (snap) => {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setProcurementEntries(rows);
+        setReadCount(prev => prev + 1);
       });
 
       // Fetch procurement ledger
@@ -145,6 +141,7 @@ const ProcurementReports = ({ onBack }) => {
       const ledgerUnsubscribe = onSnapshot(ledgerQuery, (snap) => {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setProcurementLedger(rows);
+        setReadCount(prev => prev + 1);
       });
 
       // Fetch expenses (for ledger integration)
@@ -157,6 +154,7 @@ const ProcurementReports = ({ onBack }) => {
       const expensesUnsubscribe = onSnapshot(expensesQuery, (snap) => {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setExpenses(rows);
+        setReadCount(prev => prev + 1);
       });
 
       // Fetch production entries (for quantity tracking)
@@ -168,6 +166,7 @@ const ProcurementReports = ({ onBack }) => {
       const productionUnsubscribe = onSnapshot(productionQuery, (snap) => {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setProductionEntries(rows);
+        setReadCount(prev => prev + 1);
       });
 
       setIsLoading(false);
@@ -182,7 +181,7 @@ const ProcurementReports = ({ onBack }) => {
       };
       
     } catch (error) {
-      console.error("Error fetching report data:", error);
+      toast.error("Failed to fetch report data");
       setIsLoading(false);
     }
   };
@@ -429,9 +428,10 @@ const ProcurementReports = ({ onBack }) => {
   return (
     <DieselPage>
       <PageHeader 
-        title="Procurement Reports"
+        title="📊 Procurement Reports"
         onBack={onBack}
         role={isManager ? "manager" : "admin"}
+        subtitle={`📊 Reads: ${readCount}`}
       />
 
       {/* Filters */}

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, memo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { db, auth } from "../config/firebase";
 import {
@@ -14,6 +14,8 @@ import {
 } from "firebase/firestore";
 import DMButtons from "../components/DMButtons";
 import { generateDeliveryMemo, cancelDeliveryMemo } from "../components/DeliveryMemo";
+import { ErrorBoundary } from "../components/ui";
+import { useOrganization } from "../hooks/useOrganization";
 // Removed cacheUtils import - using real-time listeners instead
 import "./ScheduledOrdersDashboard.css";
 
@@ -28,48 +30,102 @@ const ymdLocal = (date) => {
 
 const parseYMDLocal = (yyyyMmDd) => {
   // yyyy-mm-dd -> local Date at 00:00:00.000
-  const [y, m, d] = yyyyMmDd.split("-").map(Number);
+  if (!yyyyMmDd || typeof yyyyMmDd !== 'string') {
+    return new Date(); // Return current date as fallback
+  }
+  
+  const parts = yyyyMmDd.split("-");
+  if (parts.length !== 3) {
+    return new Date();
+  }
+  
+  const [y, m, d] = parts.map(Number);
+  
+  // Validate date components
+  if (isNaN(y) || isNaN(m) || isNaN(d) || y < 1900 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) {
+    return new Date();
+  }
+  
   return new Date(y, m - 1, d, 0, 0, 0, 0);
 };
 
 export default function ScheduledOrdersDashboard() {
-  const [orders, setOrders] = useState([]);
-  const [selectedDate, setSelectedDate] = useState(null);
-  const [selectedVehicle, setSelectedVehicle] = useState(null);
-  const [dateRange, setDateRange] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [summary, setSummary] = useState({ orders: 0, qty: 0, total: 0 });
+  // Consolidated state management
+  const [dashboardState, setDashboardState] = useState({
+    orders: [],
+    selectedDate: null,
+    selectedVehicle: null,
+    dateRange: [],
+    loading: true,
+    summary: { orders: 0, qty: 0, total: 0 },
+    headerCondensed: false,
+    actionLoading: {},
+    dbReadCount: 0
+  });
+  
   const navigate = useNavigate();
 
-  // Use the correct organization ID
-  const orgId = "K4Q6vPOuTcLPtlcEwdw0";
+  // Use organization hook for better organization management
+  const { orgId } = useOrganization();
 
-  const [headerCondensed, setHeaderCondensed] = useState(false);
+  // Destructure for easier access
+  const {
+    orders,
+    selectedDate,
+    selectedVehicle,
+    dateRange,
+    loading,
+    summary,
+    headerCondensed,
+    actionLoading,
+    dbReadCount
+  } = dashboardState;
+
+  // State update helpers
+  const updateState = useCallback((updates) => {
+    setDashboardState(prev => ({ ...prev, ...updates }));
+  }, []);
+
+  const setActionLoading = useCallback((actionId, isLoading) => {
+    setDashboardState(prev => ({
+      ...prev,
+      actionLoading: {
+        ...prev.actionLoading,
+        [actionId]: isLoading
+      }
+    }));
+  }, []);
 
   useEffect(() => {
     const onScroll = () => {
-      setHeaderCondensed(window.scrollY > 12);
+      updateState({ headerCondensed: window.scrollY > 12 });
     };
     window.addEventListener("scroll", onScroll, { passive: true });
     onScroll();
     return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+  }, [updateState]);
 
-  // Staggered reveal for order cards
-  useEffect(() => {
+  // Staggered reveal for order cards - optimized with useCallback
+  const setupCardAnimations = useCallback(() => {
     const cards = document.querySelectorAll(".sch-card");
-    if (!cards.length) return;
+    if (!cards.length) return () => {};
 
     const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let index = 0;
+    let timeoutIds = []; // Track timeouts for cleanup
 
     const io = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
             const el = entry.target;
-            const delay = prefersReduced ? 0 : (index++ % 10) * 40; // 0–360ms stagger
-            setTimeout(() => el.classList.add("is-visible"), delay);
+            const delay = prefersReduced ? 0 : (index++ % 10) * 40;
+            const timeoutId = setTimeout(() => {
+              if (el && el.classList) {
+                el.classList.add("is-visible");
+              }
+            }, delay);
+            timeoutIds.push(timeoutId);
             io.unobserve(el);
           }
         });
@@ -78,12 +134,19 @@ export default function ScheduledOrdersDashboard() {
     );
 
     cards.forEach((c) => {
-      c.classList.remove("is-visible");
-      io.observe(c);
+      if (c && c.classList) {
+        c.classList.remove("is-visible");
+        io.observe(c);
+      }
     });
 
-    return () => io.disconnect();
-  }, [orders]);
+    return () => {
+      io.disconnect();
+      // Clear all pending timeouts
+      timeoutIds.forEach(id => clearTimeout(id));
+    };
+  }, []);
+
 
 
   useEffect(() => {
@@ -101,9 +164,11 @@ export default function ScheduledOrdersDashboard() {
       d.setDate(today.getDate() + i);
       range.push(ymdLocal(d));
     }
-    setDateRange(range);
-    setSelectedDate(ymdLocal(today));
-  }, []);
+    updateState({
+      dateRange: range,
+      selectedDate: ymdLocal(today)
+    });
+  }, [updateState]);
 
 // Real-time orders fetching with Firestore listeners
 const setupRealTimeListener = useCallback((date) => {
@@ -113,46 +178,33 @@ const setupRealTimeListener = useCallback((date) => {
   const end = new Date(start);
   end.setHours(23, 59, 59, 999);
 
-  console.log('🔄 Setting up real-time listener for date:', date);
-  console.log('📅 Date range:', start.toISOString(), 'to', end.toISOString());
-
   const q = query(
     collection(db, "SCH_ORDERS"),
     where("orgID", "==", orgId),
     where("deliveryDate", ">=", start),
     where("deliveryDate", "<=", end),
     orderBy("deliveryDate", "desc"),
-    limit(100)
+    limit(100) // Reasonable limit to prevent performance issues with large datasets
   );
 
   const unsubscribe = onSnapshot(q, (snapshot) => {
-    console.log('📡 Real-time update received:', snapshot.docs.length, 'orders');
-    console.log('📅 Query details:', {
-      orgId: orgId,
-      start: start.toISOString(),
-      end: end.toISOString(),
-      selectedDate: selectedDate
-    });
-    
     const ordersData = snapshot.docs.map(doc => {
       const data = doc.data();
-      console.log('📋 Sample order data:', {
-        docId: doc.id,
-        clientName: data.clientName,
-        vehicleNumber: data.vehicleNumber,
-        deliveryDate: data.deliveryDate,
-        deliveryDateType: typeof data.deliveryDate,
-        orgID: data.orgID
-      });
       return { ...data, docID: doc.id };
     });
     
-    console.log('✅ Setting orders:', ordersData.length, 'orders');
-    setOrders(ordersData);
-    setLoading(false);
+    setDashboardState(prev => {
+      const newReadCount = prev.dbReadCount + 1;
+      console.log(`📖 Database Read #${newReadCount}: Fetched ${ordersData.length} orders for date ${selectedDate}`);
+      return {
+        ...prev,
+        orders: ordersData,
+        loading: false,
+        dbReadCount: newReadCount
+      };
+    });
   }, (error) => {
-    console.error("❌ Real-time listener error:", error);
-    setLoading(false);
+    updateState({ loading: false });
   });
 
   return unsubscribe;
@@ -161,17 +213,16 @@ const setupRealTimeListener = useCallback((date) => {
 useEffect(() => {
   if (!selectedDate) return;
   
-  setLoading(true);
-  console.log('🔄 Setting up real-time listener for selected date:', selectedDate);
-  
+    updateState({ loading: true });
   const unsubscribe = setupRealTimeListener(selectedDate);
   
   // Cleanup listener when component unmounts or date changes
   return () => {
-    console.log('🧹 Cleaning up real-time listener');
+      if (unsubscribe) {
     unsubscribe();
+      }
   };
-}, [selectedDate, setupRealTimeListener]);
+  }, [selectedDate, setupRealTimeListener, updateState]);
 
   const formatDateKey = useCallback((ts) => {
     // Handle both Firestore timestamps and regular Date objects
@@ -185,7 +236,7 @@ useEffect(() => {
     return null;
   }, []);
 
-  const formatTime = (ts) => {
+  const formatTime = useCallback((ts) => {
     // Handle both Firestore timestamps and regular Date objects
     if (ts && typeof ts.toDate === 'function') {
       return ts.toDate().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
@@ -195,55 +246,15 @@ useEffect(() => {
       return new Date(ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
     }
     return '';
-  };
+  }, []);
 
   const filteredOrders = useMemo(() => {
-    console.log('🔄 Starting filtering process:', {
-      totalOrders: orders.length,
-      selectedDate,
-      selectedVehicle,
-      ordersSample: orders.slice(0, 2).map(o => ({
-        clientName: o.clientName,
-        vehicleNumber: o.vehicleNumber,
-        deliveryDate: o.deliveryDate,
-        deliveryDateType: typeof o.deliveryDate
-      }))
-    });
-    
     const filtered = orders.filter(o => {
       const orderDate = formatDateKey(o.deliveryDate);
       const matchesDate = orderDate === selectedDate;
       const matchesVehicle = !selectedVehicle || o.vehicleNumber === selectedVehicle;
       
-      // Debug all orders for first few
-      if (orders.indexOf(o) < 5) {
-        console.log('🔍 Order filtering debug:', {
-          dmNumber: o.dmNumber,
-          clientName: o.clientName,
-          deliveryDate: o.deliveryDate,
-          orderDate,
-          selectedDate,
-          matchesDate,
-          vehicleNumber: o.vehicleNumber,
-          selectedVehicle,
-          matchesVehicle,
-          deliveryDateType: typeof o.deliveryDate,
-          finalMatch: matchesDate && matchesVehicle
-        });
-      }
-      
       return matchesDate && matchesVehicle;
-    });
-    
-    console.log('📊 Filtering results:', {
-      totalOrders: orders.length,
-      filteredOrders: filtered.length,
-      selectedDate,
-      selectedVehicle,
-      filteredSample: filtered.slice(0, 2).map(o => ({
-        clientName: o.clientName,
-        vehicleNumber: o.vehicleNumber
-      }))
     });
     
     return filtered;
@@ -288,25 +299,15 @@ useEffect(() => {
   }, [orders, selectedDate, selectedVehicle]);
 
   useEffect(() => {
-    setSummary(summaryData);
-  }, [summaryData]);
+    updateState({ summary: summaryData });
+  }, [summaryData, updateState]);
 
-  // Debug vehicle filter changes and validate selected vehicle
+  // Validate selected vehicle exists in available vehicles
   useEffect(() => {
-    console.log('🚛 Vehicle filter changed:', {
-      selectedVehicle,
-      availableVehicles: vehicles,
-      totalOrders: orders.length,
-      filteredOrders: filteredOrders.length,
-      selectedDate
-    });
-    
-    // Validate that selected vehicle exists in available vehicles
     if (selectedVehicle && vehicles.length > 0 && !vehicles.includes(selectedVehicle)) {
-      console.warn('⚠️ Selected vehicle not found in available vehicles, resetting filter');
-      setSelectedVehicle(null);
+      updateState({ selectedVehicle: null });
     }
-  }, [selectedVehicle, vehicles, orders.length, filteredOrders.length, selectedDate]);
+  }, [selectedVehicle, vehicles]);
 
   // Deduplicate orders by clientName, vehicleNumber, and deliveryDate before rendering
   const deduplicatedOrders = useMemo(() => {
@@ -333,22 +334,14 @@ useEffect(() => {
     return Array.from(uniqueOrdersMap.values());
   }, [sortedOrders, formatDateKey]);
   
-  console.log('🔄 Deduplication results:', {
-    sortedOrders: sortedOrders.length,
-    deduplicatedOrders: deduplicatedOrders.length,
-    sampleDeduplicated: deduplicatedOrders[0]
-  });
-  
-  console.log('🎯 Rendering state:', {
-    loading,
-    ordersCount: orders.length,
-    filteredCount: filteredOrders.length,
-    deduplicatedCount: deduplicatedOrders.length,
-    selectedDate,
-    selectedVehicle
-  });
+  // Setup card animations after deduplicatedOrders is defined
+  useEffect(() => {
+    const cleanup = setupCardAnimations();
+    return cleanup;
+  }, [deduplicatedOrders.length, setupCardAnimations]);
 
   return (
+    <ErrorBoundary>
     <div className="apple-font-stack" style={{
       background: "radial-gradient(1200px 800px at 20% -10%, #1f232a 0%, #0b0d0f 60%)",
       minHeight: "100vh",
@@ -396,8 +389,10 @@ useEffect(() => {
             <div
               key={date}
               onClick={() => {
-                setSelectedDate(date);
-                setSelectedVehicle(null);
+                updateState({
+                  selectedDate: date,
+                  selectedVehicle: null
+                });
               }}
               className={`pill ${date === selectedDate ? 'active' : ''}`}
             >
@@ -412,7 +407,7 @@ useEffect(() => {
       {/* Vehicle Filter - Modern Style */}
       <div className="vehicle-filter-container">
         <div
-          onClick={() => setSelectedVehicle(null)}
+          onClick={() => updateState({ selectedVehicle: null })}
           className={`pill ${!selectedVehicle ? 'active' : ''}`}
         >
           🚛 All Vehicles
@@ -420,7 +415,7 @@ useEffect(() => {
         {vehicles.map(vehicle => (
           <div
             key={vehicle}
-            onClick={() => setSelectedVehicle(vehicle)}
+            onClick={() => updateState({ selectedVehicle: vehicle })}
             className={`pill ${selectedVehicle === vehicle ? 'active' : ''}`}
           >
             🚚 {vehicle}
@@ -451,176 +446,249 @@ useEffect(() => {
 
       {/* Orders Grid - Fixed 4 Columns */}
       <div className="orders-grid">
-        {(() => {
-          console.log('🎨 Render check:', { loading, deduplicatedOrdersLength: deduplicatedOrders.length, deduplicatedOrders });
-          return null;
-        })()}
         {loading ? (
           Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="card-surface loading-skeleton" />
           ))
         ) : deduplicatedOrders.length === 0 ? (
-          <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '2rem', color: '#666' }}>
+          <div style={{ 
+            gridColumn: '1 / -1', 
+            textAlign: 'center', 
+            padding: '3rem 2rem',
+            background: 'rgba(28,28,30,0.6)',
+            borderRadius: '16px',
+            border: '1px solid rgba(255,255,255,0.1)',
+            color: '#a1a1aa'
+          }}>
+            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📅</div>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '0.5rem', color: '#f5f5f7' }}>
+              No Orders Found
+            </h3>
+            <p style={{ fontSize: '1rem', lineHeight: '1.5' }}>
             No orders found for the selected date and vehicle filter.
+            </p>
           </div>
         ) : (
           <>
-            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '1rem', background: 'rgba(255,255,255,0.1)', borderRadius: '10px', marginBottom: '1rem' }}>
-              🎯 DEBUG: Rendering {deduplicatedOrders.length} orders
-            </div>
-            {deduplicatedOrders.map((o, idx) => {
-            // Determine card status class
-            let cardStatusClass = "pending";
-            if (o.deliveryStatus) {
-              cardStatusClass = "delivered";
-            } else if (o.dispatchStatus) {
-              cardStatusClass = "dispatched";
-            }
-            
-            const paymentLabel = !o.paymentStatus ? (o.paySchedule === "POD" ? "Pay on Delivery" : o.paySchedule === "PL" ? "Pay Later" : o.paySchedule) : o.toAccount || "—";
-
-            return (
-              <div
+            {deduplicatedOrders.map((o, idx) => (
+              <OrderCard 
                 key={`${o.docID || o.id || o.defOrderID || idx}-${o.clientName}-${o.vehicleNumber}-${o.deliveryDate?.seconds || o.deliveryDate}`}
-                className={`order-card sch-card ${cardStatusClass}`}
-              >
-                <div className="order-card-header">
-                  <div>
-                    <div className="sub-text" style={{ fontSize: "16px", marginBottom: "0.25rem" }}>
-                      🚚 Vehicle: {o.vehicleNumber || "-"}
-                    </div>
-                    <div className="sub-text" style={{ fontSize: "14px" }}>
-                      ⏰ {formatTime(o.dispatchStart)} - {formatTime(o.dispatchEnd)}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "right", fontWeight: 700, fontSize: "18px" }}>
-                    <div className="sub-text" style={{ fontSize: "16px", marginBottom: "0.25rem" }}>
-                      👤 {o.clientName}
-                    </div>
-                    <div className="sub-text" style={{ fontSize: "14px" }}>📞 {o.clientPhoneNumber}</div>
-                  </div>
-                </div>
-                <div className="order-card-details sub-text">
-                  <div style={{ marginBottom: "0.5rem" }}>📍 <strong>Region:</strong> {o.address}, {o.regionName}</div>
-                  <div style={{ marginBottom: "0.5rem" }}>📦 <strong>Product:</strong> {o.productName}</div>
-                  <div style={{ marginBottom: "0.5rem" }}>💰 <strong>Unit Price:</strong> ₹{o.productUnitPrice}</div>
-                  <div style={{ marginBottom: "0.5rem" }}>🔢 <strong>Quantity:</strong> {o.productQuant}</div>
-                  <div style={{ marginBottom: "0.5rem" }}>
-                    <span style={{
-                      color: !o.paymentStatus ? "#FFD60A" : "#32D74B",
-                      fontWeight: 700,
-                      // readable on both backgrounds
-                      filter: o.dispatchStatus ? "brightness(0.8)" : undefined
-                    }}>
-                      💳 <strong>Payment:</strong> {paymentLabel}
-                    </span>
-                  </div>
-                  <div style={{ marginBottom: "0.5rem", fontSize: "16px", fontWeight: 700 }}>
-                    💰 <strong>Total:</strong> ₹{(o.productQuant * o.productUnitPrice).toLocaleString()}
-                  </div>
-                  {o.dmNumber && o.dmNumber !== "Cancelled" && typeof o.dmNumber === "number" && (
-                    <div style={{ marginBottom: "0.5rem" }}>
-                      📄 <strong>DM No:</strong>{" "}
-                      <a
-                        href={`/print-dm/${o.dmNumber}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="dm-link"
-                      >
-                        #{o.dmNumber}
-                      </a>
-                    </div>
-                  )}
-                  {o.dmNumber === "Cancelled" && (
-                    <div style={{ marginBottom: "0.5rem" }}>
-                      📄 <strong>DM:</strong> <span style={{ color: "#ff4444" }}>Cancelled</span>
-                    </div>
-                  )}
-                </div>
-                <div className="order-card-actions">
-                  <div className="order-card-actions-container">
-                    {/* Show DMButtons if not delivered and no DM or DM is cancelled or dmNumber is not a number */}
-                    {!o.deliveryStatus && (!o.dmNumber || o.dmNumber === "Cancelled" || typeof o.dmNumber !== "number") && <DMButtons order={o} />}
-                    {/* Print DM button if dmNumber exists */}
-                    {o.dmNumber && (
-                      <button
-                        onClick={() => window.open(`/print-dm/${o.dmNumber}`, '_blank', 'width=900,height=700,scrollbars=yes,resizable=yes')}
-                        className="action-button button-neutral"
-                      >
-                        🖨️ Print DM
-                      </button>
-                    )}
-                    {/* Cancel DM button if DM exists, is not Cancelled, and not delivered or dispatched */}
-                    {!o.deliveryStatus && !o.dispatchStatus && o.dmNumber && o.dmNumber !== "Cancelled" && (
-                      <button
-                        onClick={async (e) => {
-                          const btn = e.currentTarget;
-                          if (window.confirm("Are you sure you want to cancel this Delivery Memo?")) {
-                            const originalText = btn.textContent;
-                            btn.textContent = "Cancelling...";
-                            btn.disabled = true;
-                            btn.style.opacity = 0.6;
-                            try {
-                              const dmQuery = query(
-                                collection(db, "DELIVERY_MEMOS"),
-                                where("dmNumber", "==", o.dmNumber),
-                                where("orgID", "==", orgId),
-                              );
-
-                              const snapshot = await getDocs(dmQuery);
-                              if (!snapshot.empty) {
-                                const dmDoc = snapshot.docs[0];
-                                await updateDoc(doc(db, "DELIVERY_MEMOS", dmDoc.id), {
-                                  status: "cancelled",
-                                  clientName: "Cancelled",
-                                  vehicleNumber: "Cancelled",
-                                  regionName: "Cancelled",
-                                  productName: "Cancelled",
-                                  productQuant: "Cancelled",
-                                  productUnitPrice: "Cancelled",
-                                  toAccount: "Cancelled",
-                                  paySchedule: "Cancelled",
-                                  paymentStatus: "Cancelled",
-                                  dispatchStart: "Cancelled",
-                                  dispatchEnd: "Cancelled",
-                                  deliveryDate: "Cancelled",
-                                  dispatchedTime: "Cancelled",
-                                  deliveredTime: "Cancelled",
-                                  cancelledAt: new Date()
-                                });
-                                // Mark dmNumber as "Cancelled" in SCH_ORDERS so UI reflects cancellation
-                                await updateDoc(doc(db, "SCH_ORDERS", o.docID), {
-                                  dmNumber: "Cancelled"
-                                });
-                                btn.textContent = "Cancelled ✅";
-                              } else {
-                                btn.textContent = "DM Not Found ❌";
-                              }
-                            } catch (error) {
-                              console.error("Error cancelling DM:", error);
-                              btn.textContent = "Error ❌";
-                            } finally {
-                              setTimeout(() => {
-                                btn.textContent = originalText;
-                                btn.disabled = false;
-                                btn.opacity = 1;
-                              }, 2000);
-                            }
-                          }
-                        }}
-                        className="action-button button-danger"
-                      >
-                        ❌ Cancel DM
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+                order={o}
+                formatTime={formatTime}
+                actionLoading={actionLoading}
+                setActionLoading={setActionLoading}
+                orgId={orgId}
+                updateState={updateState}
+              />
+            ))}
           </>
         )}
       </div>
     </div>
+    </ErrorBoundary>
   );
 }
+
+// Memoized OrderCard component for better performance
+const OrderCard = memo(({ order: o, formatTime, actionLoading, setActionLoading, orgId, updateState }) => {
+  // Determine card status class
+  let cardStatusClass = "pending";
+  if (o.deliveryStatus) {
+    cardStatusClass = "delivered";
+  } else if (o.dispatchStatus) {
+    cardStatusClass = "dispatched";
+  }
+  
+  const paymentLabel = !o.paymentStatus ? (o.paySchedule === "POD" ? "Pay on Delivery" : o.paySchedule === "PL" ? "Pay Later" : o.paySchedule) : o.toAccount || "—";
+
+  return (
+    <div className={`order-card sch-card ${cardStatusClass}`}>
+      <div className="order-card-header">
+        <div>
+          <div className="sub-text" style={{ fontSize: "16px", marginBottom: "0.25rem" }}>
+            🚚 Vehicle: {o.vehicleNumber || "-"}
+          </div>
+          <div className="sub-text" style={{ fontSize: "14px" }}>
+            ⏰ {formatTime(o.dispatchStart)} - {formatTime(o.dispatchEnd)}
+          </div>
+        </div>
+        <div style={{ textAlign: "right", fontWeight: 700, fontSize: "18px" }}>
+          <div className="sub-text" style={{ fontSize: "16px", marginBottom: "0.25rem" }}>
+            👤 {o.clientName}
+          </div>
+          <div className="sub-text" style={{ fontSize: "14px" }}>📞 {o.clientPhoneNumber}</div>
+        </div>
+      </div>
+      <div className="order-card-details sub-text">
+        <div style={{ marginBottom: "0.5rem" }}>📍 <strong>Region:</strong> {o.address}, {o.regionName}</div>
+        <div style={{ marginBottom: "0.5rem" }}>📦 <strong>Product:</strong> {o.productName}</div>
+        <div style={{ marginBottom: "0.5rem" }}>💰 <strong>Unit Price:</strong> ₹{o.productUnitPrice}</div>
+        <div style={{ marginBottom: "0.5rem" }}>🔢 <strong>Quantity:</strong> {o.productQuant}</div>
+        <div style={{ marginBottom: "0.5rem" }}>
+          <span style={{
+            color: !o.paymentStatus ? "#FFD60A" : "#32D74B",
+            fontWeight: 700,
+            filter: o.dispatchStatus ? "brightness(0.8)" : undefined
+          }}>
+            💳 <strong>Payment:</strong> {paymentLabel}
+          </span>
+        </div>
+        <div style={{ marginBottom: "0.5rem", fontSize: "16px", fontWeight: 700 }}>
+          💰 <strong>Total:</strong> ₹{(o.productQuant * o.productUnitPrice).toLocaleString()}
+        </div>
+        {o.dmNumber && o.dmNumber !== "Cancelled" && typeof o.dmNumber === "number" && (
+          <div style={{ marginBottom: "0.5rem" }}>
+            📄 <strong>DM No:</strong>{" "}
+            <a
+              href={`/print-dm/${o.dmNumber}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="dm-link"
+            >
+              #{o.dmNumber}
+            </a>
+          </div>
+        )}
+        {o.dmNumber === "Cancelled" && (
+          <div style={{ marginBottom: "0.5rem" }}>
+            📄 <strong>DM:</strong> <span style={{ color: "#ff4444" }}>Cancelled</span>
+          </div>
+        )}
+      </div>
+      <div className="order-card-actions">
+        <div className="order-card-actions-container">
+          {/* Show DMButtons if not delivered/dispatched and no DM or DM is cancelled or dmNumber is not a number */}
+          {!o.deliveryStatus && !o.dispatchStatus && (!o.dmNumber || o.dmNumber === "Cancelled" || typeof o.dmNumber !== "number") && (
+            <DMButtons 
+              order={o} 
+              onActionLoading={setActionLoading}
+            />
+          )}
+          {/* Print DM button if dmNumber exists and is not cancelled */}
+          {o.dmNumber && o.dmNumber !== "Cancelled" && typeof o.dmNumber === "number" && (
+            <button
+              onClick={async () => {
+                const actionId = `print-${o.docID}`;
+                setActionLoading(actionId, true);
+                try {
+                  // Validate DM still exists and is active
+                  const dmQuery = query(
+                    collection(db, "DELIVERY_MEMOS"),
+                    where("dmNumber", "==", o.dmNumber),
+                    where("orgID", "==", orgId),
+                    where("status", "==", "active")
+                  );
+                  console.log(`📖 Database Read: Validating DM #${o.dmNumber} for print`);
+                  const snapshot = await getDocs(dmQuery);
+                  
+                  if (snapshot.empty) {
+                    alert("Delivery Memo not found or has been cancelled.");
+                    return;
+                  }
+                  
+                  const printWindow = window.open(`/print-dm/${o.dmNumber}`, '_blank', 'width=900,height=700,scrollbars=yes,resizable=yes');
+                  
+                  if (!printWindow) {
+                    alert("Please allow popups for this site to print delivery memos.");
+                  }
+                } catch (error) {
+                  alert("Failed to open print window. Please try again.");
+                } finally {
+                  setActionLoading(actionId, false);
+                }
+              }}
+              className="action-button button-neutral"
+              disabled={actionLoading[`print-${o.docID}`]}
+            >
+              {actionLoading[`print-${o.docID}`] ? '⏳ Printing...' : '🖨️ Print DM'}
+            </button>
+          )}
+          {/* Cancel DM button if DM exists, is not Cancelled, and not delivered or dispatched */}
+          {!o.deliveryStatus && !o.dispatchStatus && o.dmNumber && o.dmNumber !== "Cancelled" && typeof o.dmNumber === "number" && (
+            <button
+              onClick={async () => {
+                const actionId = `cancel-${o.docID}`;
+                
+                // Enhanced confirmation with order details
+                const confirmMessage = `Are you sure you want to cancel Delivery Memo #${o.dmNumber} for ${o.clientName}?\n\nThis action cannot be undone.`;
+                
+                if (window.confirm(confirmMessage)) {
+                  setActionLoading(actionId, true);
+                  try {
+                    // First, verify the DM still exists and is active
+                    const dmQuery = query(
+                      collection(db, "DELIVERY_MEMOS"),
+                      where("dmNumber", "==", o.dmNumber),
+                      where("orgID", "==", orgId),
+                      where("status", "==", "active")
+                    );
+
+                    console.log(`📖 Database Read: Validating DM #${o.dmNumber} for cancellation`);
+                    const snapshot = await getDocs(dmQuery);
+                    if (snapshot.empty) {
+                      alert("Delivery Memo not found or has already been cancelled.");
+                      return;
+                    }
+
+                    const dmDoc = snapshot.docs[0];
+                    const dmData = dmDoc.data();
+                    
+                    // Verify this is the correct DM for this order
+                    if (dmData.orderID !== o.docID) {
+                      alert("Delivery Memo does not match this order. Please refresh the page.");
+                      return;
+                    }
+
+                    // Update DELIVERY_MEMOS collection
+                    await updateDoc(doc(db, "DELIVERY_MEMOS", dmDoc.id), {
+                      status: "cancelled",
+                      clientName: "Cancelled",
+                      vehicleNumber: "Cancelled",
+                      regionName: "Cancelled",
+                      productName: "Cancelled",
+                      productQuant: "Cancelled",
+                      productUnitPrice: "Cancelled",
+                      toAccount: "Cancelled",
+                      paySchedule: "Cancelled",
+                      paymentStatus: "Cancelled",
+                      dispatchStart: "Cancelled",
+                      dispatchEnd: "Cancelled",
+                      deliveryDate: "Cancelled",
+                      dispatchedTime: "Cancelled",
+                      deliveredTime: "Cancelled",
+                      cancelledAt: new Date(),
+                      cancelledBy: auth.currentUser?.uid || "unknown"
+                    });
+                    
+                    // Update SCH_ORDERS collection
+                    await updateDoc(doc(db, "SCH_ORDERS", o.docID), {
+                      dmNumber: "Cancelled",
+                      dmCancelledAt: new Date(),
+                      dmCancelledBy: auth.currentUser?.uid || "unknown"
+                    });
+                    
+                    alert(`Delivery Memo #${o.dmNumber} has been successfully cancelled.`);
+                  } catch (error) {
+                    if (error.code === 'permission-denied') {
+                      alert("You don't have permission to cancel this delivery memo.");
+                    } else if (error.code === 'not-found') {
+                      alert("Delivery Memo not found. It may have already been cancelled.");
+                    } else {
+                      alert("Failed to cancel delivery memo. Please try again or contact support.");
+                    }
+                  } finally {
+                    setActionLoading(actionId, false);
+                  }
+                }
+              }}
+              className="action-button button-danger"
+              disabled={actionLoading[`cancel-${o.docID}`]}
+            >
+              {actionLoading[`cancel-${o.docID}`] ? '⏳ Cancelling...' : '❌ Cancel DM'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});

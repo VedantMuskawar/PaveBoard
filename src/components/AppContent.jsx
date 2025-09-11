@@ -21,7 +21,7 @@ const AppContent = () => {
   const [dbInitialized, setDbInitialized] = useState(false);
   
   const { user, loading: authLoading, isAuthenticated } = useAuth();
-  const { selectedOrganization } = useOrganization();
+  const { selectedOrganization, isLoading: orgLoading } = useOrganization();
   const {
     userData,
     loading: dataLoading,
@@ -71,7 +71,7 @@ const AppContent = () => {
   };
 
   // Show loading while initializing
-  if (!dbInitialized || authLoading) {
+  if (!dbInitialized || authLoading || orgLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">

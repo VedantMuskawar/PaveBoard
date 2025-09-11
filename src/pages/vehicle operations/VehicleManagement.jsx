@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { db } from "../../config/firebase";
 import {
   collection,
@@ -6,8 +6,11 @@ import {
   getDocs,
   addDoc,
   deleteDoc,
+  updateDoc,
   Timestamp,
-  doc
+  doc,
+  onSnapshot,
+  where
 } from "firebase/firestore";
 import { useOrganization } from "../../contexts/OrganizationContext";
 import { useAuth } from "../../hooks/useAuth";
@@ -23,7 +26,11 @@ import {
   PageHeader,
   SectionCard,
   Badge,
-  ConfirmationModal
+  ConfirmationModal,
+  SelectField,
+  NumberInput,
+  DieselPage,
+  FilterBar
 } from "../../components/ui";
 import './VehicleManagement.css';
 
@@ -41,26 +48,63 @@ const ManageVehicle = ({ onBack }) => {
   
   const [vehicles, setVehicles] = useState([]);
   const [activeForm, setActiveForm] = useState(null);
+  const [editingVehicle, setEditingVehicle] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [searchText, setSearchText] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [vehicleToDelete, setVehicleToDelete] = useState(null);
-
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const snap = await getDocs(query(collection(db, "VEHICLES")));
-      setVehicles(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    } catch (error) {
-      console.error("Error fetching vehicles:", error);
-      toast.error("Failed to fetch vehicles");
-    } finally {
-      setLoading(false);
+  const [formData, setFormData] = useState({
+    vehicleNo: "",
+    type: "",
+    meterType: "",
+    vehicleQuantity: 0,
+    status: "Active",
+    weeklyCapacity: {
+      Thu: 0,
+      Fri: 0,
+      Sat: 0,
+      Sun: 0,
+      Mon: 0,
+      Tue: 0,
+      Wed: 0
     }
-  };
+  });
 
+  // Fetch vehicles with real-time updates
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (!selectedOrg?.orgID) return;
+
+    const q = query(
+      collection(db, "VEHICLES"),
+      where("orgID", "==", selectedOrg.orgID)
+    );
+
+    const unsubscribe = onSnapshot(q, 
+      (snapshot) => {
+        const vehicles = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        // Sort vehicles by vehicleNo for consistent ordering
+        const sortedVehicles = vehicles.sort((a, b) => {
+          const vehicleNoA = a.vehicleNo || '';
+          const vehicleNoB = b.vehicleNo || '';
+          return vehicleNoA.localeCompare(vehicleNoB);
+        });
+        
+        setVehicles(sortedVehicles);
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Error fetching vehicles:", error);
+        toast.error("Failed to fetch vehicles");
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [selectedOrg?.orgID]);
 
   // Check if organization is selected
   useEffect(() => {
@@ -89,136 +133,340 @@ const ManageVehicle = ({ onBack }) => {
   };
 
 
-  const handleAddVehicle = async (formData) => {
+  // Reset form data
+  const resetFormData = useCallback(() => {
+    setFormData({
+      vehicleNo: "",
+      type: "",
+      meterType: "",
+      vehicleQuantity: 0,
+      status: "Active",
+      weeklyCapacity: {
+        Thu: 0,
+        Fri: 0,
+        Sat: 0,
+        Sun: 0,
+        Mon: 0,
+        Tue: 0,
+        Wed: 0
+      }
+    });
+    setEditingVehicle(null);
+  }, []);
+
+  // Handle form input changes
+  const handleInputChange = useCallback((field, value) => {
+    if (field.startsWith('weeklyCapacity.')) {
+      const day = field.split('.')[1];
+      setFormData(prev => ({
+        ...prev,
+        weeklyCapacity: {
+          ...prev.weeklyCapacity,
+          [day]: parseInt(value) || 0
+        }
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [field]: value
+      }));
+    }
+  }, []);
+
+  // Add or update vehicle
+  const handleSubmitVehicle = async (e) => {
+    e.preventDefault();
     try {
       const data = {
         ...formData,
-        createdAt: Timestamp.now(),
-        status: "Active"
+        orgID: selectedOrg.orgID,
+        createdAt: editingVehicle ? editingVehicle.createdAt : Timestamp.now(),
+        updatedAt: Timestamp.now()
       };
-      await addDoc(collection(db, "VEHICLES"), data);
-      toast.success("Vehicle added successfully");
-      fetchData();
+
+      if (editingVehicle) {
+        await updateDoc(doc(db, "VEHICLES", editingVehicle.id), data);
+        toast.success("Vehicle updated successfully");
+      } else {
+        await addDoc(collection(db, "VEHICLES"), data);
+        toast.success("Vehicle added successfully");
+      }
+      
+      resetFormData();
       setActiveForm(null);
     } catch (error) {
-      console.error("Error adding vehicle:", error);
-      toast.error("Failed to add vehicle");
+      console.error("Error saving vehicle:", error);
+      toast.error("Failed to save vehicle");
     }
   };
 
-  const tableColumns = [
+  // Edit vehicle
+  const handleEditVehicle = useCallback((vehicle) => {
+    setEditingVehicle(vehicle);
+    setFormData({
+      vehicleNo: vehicle.vehicleNo || "",
+      type: vehicle.type || "",
+      meterType: vehicle.meterType || "",
+      vehicleQuantity: vehicle.vehicleQuantity || 0,
+      status: vehicle.status || "Active",
+      weeklyCapacity: vehicle.weeklyCapacity || {
+        Thu: 0,
+        Fri: 0,
+        Sat: 0,
+        Sun: 0,
+        Mon: 0,
+        Tue: 0,
+        Wed: 0
+      }
+    });
+    setActiveForm("Vehicles");
+  }, []);
+
+  // Cancel edit
+  const handleCancelEdit = useCallback(() => {
+    resetFormData();
+    setActiveForm(null);
+  }, [resetFormData]);
+
+  // Filter vehicles based on search text
+  const filteredVehicles = useMemo(() => {
+    if (!searchText) return vehicles;
+    
+    return vehicles.filter(vehicle => {
+      const searchLower = searchText.toLowerCase();
+      return (
+        vehicle.vehicleNo?.toLowerCase().includes(searchLower) ||
+        vehicle.type?.toLowerCase().includes(searchLower) ||
+        vehicle.meterType?.toLowerCase().includes(searchLower)
+      );
+    });
+  }, [vehicles, searchText]);
+
+  // Format weekly capacity for display
+  const formatWeeklyCapacity = useCallback((weeklyCapacity) => {
+    if (!weeklyCapacity) return "N/A";
+    const days = ['Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue', 'Wed'];
+    return days.map(day => `${day}: ${weeklyCapacity[day] || 0}`).join(', ');
+  }, []);
+
+  const tableColumns = useMemo(() => [
     { key: 'vehicleNo', header: 'Vehicle No' },
     { key: 'type', header: 'Type' },
     { key: 'meterType', header: 'Meter Type' },
-    { key: 'status', header: 'Status' },
+    { key: 'vehicleQuantity', header: 'Capacity' },
+    { 
+      key: 'status', 
+      header: 'Status',
+      render: (vehicle) => (
+        <Badge 
+          variant={vehicle.status === "Active" ? "success" : "danger"}
+        >
+          {vehicle.status}
+        </Badge>
+      )
+    },
+    { 
+      key: 'weeklyCapacity', 
+      header: 'Weekly Capacity',
+      render: (vehicle) => (
+        <div className="text-xs text-gray-400 max-w-xs">
+          {formatWeeklyCapacity(vehicle.weeklyCapacity)}
+        </div>
+      )
+    },
     {
       key: 'actions',
       header: 'Actions',
       render: (vehicle) => (
-        <Button
-          variant="danger"
-          size="sm"
-          onClick={() => confirmDelete(vehicle)}
-          className="px-2 py-1"
-        >
-          🗑️
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleEditVehicle(vehicle)}
+            className="px-2 py-1"
+          >
+            ✏️
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => confirmDelete(vehicle)}
+            className="px-2 py-1"
+          >
+            🗑️
+          </Button>
+        </div>
       )
     }
-  ];
+  ], [formatWeeklyCapacity, handleEditVehicle]);
 
   return (
-    <div className="vehicle-management-container">
+    <DieselPage>
       <PageHeader
-        title="🚜 Manage Vehicles"
         onBack={handleBack}
         role={isAdmin ? "admin" : "manager"}
+        roleDisplay={isAdmin ? "👑 Admin" : "👔 Manager"}
       />
-
-      <div className="main-content">
-        <div className="content-panel">
-          {/* Add Vehicle Button */}
-          <div className="form-buttons-container">
-            <Button
-              variant="primary"
-              onClick={() => setActiveForm("Vehicles")}
-              className="add-vehicle-btn"
-            >
-              Add Vehicle
-            </Button>
-          </div>
+      
+      {/* Filter Bar */}
+      <FilterBar style={{ marginTop: "1.5rem", marginBottom: "2rem" }}>
+        <FilterBar.Actions>
+          <Button
+            variant="primary"
+            onClick={() => {
+              resetFormData();
+              setActiveForm("Vehicles");
+            }}
+            size="md"
+          >
+            ➕ Add Vehicle
+          </Button>
+        </FilterBar.Actions>
+        
+        <FilterBar.Search
+          placeholder="Search vehicles..."
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          style={{ width: "300px" }}
+        />
+      </FilterBar>
+      
+      {/* Main Content Container */}
+      <div style={{ marginTop: "1.5rem", padding: "0 2rem", width: "100%", boxSizing: "border-box" }}>
+        <div>
 
           {/* Modal for Form */}
           <Modal
             isOpen={activeForm === "Vehicles"}
-            onClose={() => setActiveForm(null)}
-            title="Add Vehicle"
+            onClose={handleCancelEdit}
+            title={editingVehicle ? "Edit Vehicle" : "Add Vehicle"}
             className="modal-content"
           >
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const formData = {
-                  vehicleNo: e.target.vehicleNo.value,
-                  type: e.target.type.value,
-                  meterType: e.target.meterType.value
-                };
-                await handleAddVehicle(formData);
-                e.target.reset();
-              }}
-              className="form-section"
-            >
-              <Input
-                name="vehicleNo"
-                placeholder="Vehicle No"
-                required
-                className="vehicle-input"
-              />
-              <Input
-                name="type"
-                placeholder="Type"
-                required
-                className="vehicle-input"
-              />
-              <Input
-                name="meterType"
-                placeholder="Meter Type"
-                required
-                className="vehicle-input"
-              />
-              <Button type="submit" variant="primary" className="submit-btn">
-                Add Vehicle
-              </Button>
+            <form onSubmit={handleSubmitVehicle} className="form-section">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <Input
+                  placeholder="Vehicle No"
+                  value={formData.vehicleNo}
+                  onChange={(e) => handleInputChange('vehicleNo', e.target.value)}
+                  required
+                  className="vehicle-input"
+                />
+                <Input
+                  placeholder="Type"
+                  value={formData.type}
+                  onChange={(e) => handleInputChange('type', e.target.value)}
+                  required
+                  className="vehicle-input"
+                />
+                <Input
+                  placeholder="Meter Type"
+                  value={formData.meterType}
+                  onChange={(e) => handleInputChange('meterType', e.target.value)}
+                  required
+                  className="vehicle-input"
+                />
+                <NumberInput
+                  placeholder="Vehicle Quantity"
+                  value={formData.vehicleQuantity}
+                  onChange={(e) => handleInputChange('vehicleQuantity', e.target.value)}
+                  required
+                  min="0"
+                  className="vehicle-input"
+                />
+                <SelectField
+                  label="Status"
+                  value={formData.status}
+                  onChange={(e) => handleInputChange('status', e.target.value)}
+                  options={[
+                    { value: "Active", label: "Active" },
+                    { value: "Inactive", label: "Inactive" }
+                  ]}
+                  className="vehicle-input"
+                />
+              </div>
+
+              {/* Weekly Capacity Section */}
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Weekly Capacity (Thu → Wed)</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {['Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue', 'Wed'].map(day => (
+                    <div key={day} className="flex flex-col">
+                      <label className="text-sm text-gray-300 mb-1">{day}</label>
+                      <NumberInput
+                        value={formData.weeklyCapacity[day]}
+                        onChange={(e) => handleInputChange(`weeklyCapacity.${day}`, e.target.value)}
+                        min="0"
+                        className="vehicle-input"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-4">
+                <Button type="submit" variant="primary" className="submit-btn">
+                  {editingVehicle ? "Update Vehicle" : "Add Vehicle"}
+                </Button>
+                <Button type="button" variant="outline" onClick={handleCancelEdit}>
+                  Cancel
+                </Button>
+              </div>
             </form>
           </Modal>
 
-          {/* Table Section */}
-          <SectionCard title="Vehicles" className="table-section">
+          {/* Vehicles Table */}
+          <div style={{
+            background: "rgba(20,20,22,0.6)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: "16px",
+            padding: "1.5rem",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.1)"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", marginBottom: "1rem" }}>
+              <span style={{ fontSize: "1.5rem", marginRight: "0.5rem" }}>🚜</span>
+              <h2 style={{ color: "#fff", fontWeight: "600", margin: 0, fontSize: "1.25rem" }}>
+                Vehicles
+              </h2>
+            </div>
+            
             {loading ? (
-              <LoadingState />
-            ) : vehicles.length === 0 ? (
-              <EmptyState
-                title="No Vehicles Found"
-                description="Add your first vehicle to get started"
-                action={
+              <LoadingState variant="inline" message="Loading vehicles..." icon="⏳" />
+            ) : filteredVehicles.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "3rem 1rem" }}>
+                <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>🚜</div>
+                <h3 style={{ color: "#fff", marginBottom: "0.5rem", fontSize: "1.25rem" }}>
+                  {searchText ? "No Vehicles Found" : "No Vehicles Found"}
+                </h3>
+                <p style={{ color: "#9ca3af", marginBottom: "1.5rem" }}>
+                  {searchText ? "No vehicles match your search criteria" : "Add your first vehicle to get started"}
+                </p>
+                {searchText ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => setSearchText("")}
+                    style={{ background: "rgba(55,65,81,0.5)", border: "1px solid rgba(255,255,255,0.2)" }}
+                  >
+                    Clear Search
+                  </Button>
+                ) : (
                   <Button
                     variant="primary"
                     onClick={() => setActiveForm("Vehicles")}
                   >
                     Add Vehicle
                   </Button>
-                }
-              />
+                )}
+              </div>
             ) : (
-              <div className="scrollable-container">
+              <div style={{ overflow: "auto" }}>
                 <DataTable
-                  data={vehicles}
+                  data={filteredVehicles}
                   columns={tableColumns}
                   className="vehicle-table"
                 />
               </div>
             )}
-          </SectionCard>
+          </div>
 
           {/* Delete Confirmation Modal */}
           <ConfirmationModal
@@ -235,7 +483,7 @@ const ManageVehicle = ({ onBack }) => {
           />
         </div>
       </div>
-    </div>
+    </DieselPage>
   );
 };
 

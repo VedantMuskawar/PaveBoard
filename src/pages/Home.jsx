@@ -17,11 +17,13 @@ import {
 
 // Lazy load heavy components for better performance
 const OrdersDashboard = lazy(() => import("./order/OrdersDashboard"));
+const PendingOrders = lazy(() => import("./order/PendingOrders"));
 const DieselLedger = lazy(() => import("./order/DieselLedger"));
-const ProductionEntry = lazy(() => import("./production & labour/ProductionEntry"));
+const ProductionEntriesPage = lazy(() => import("./production & labour/ProductionEntriesPage"));
 const VehicleLabourEntry = lazy(() => import("./production & labour/VehicleLabourEntry"));
 const VehicleLabourWeeklyLedger = lazy(() => import("./production & labour/VehicleLabourWeeklyLedger"));
 const LabourManagement = lazy(() => import("./production & labour/LabourManagement"));
+const LedgerPage = lazy(() => import("./production & labour/LedgerPage"));
 const ClientLedger = lazy(() => import("./accounting/ClientLedger"));
 const IncomeLedger = lazy(() => import("./accounting/IncomeLedger"));
 const ExpenseManagement = lazy(() => import("./accounting/ExpenseManagement"));
@@ -43,6 +45,26 @@ const LoadingSpinner = ({ message = "Loading..." }) => (
   </div>
 );
 
+// Reusable error boundary component
+const ErrorBoundary = ({ children, fallbackTitle, fallbackMessage }) => {
+  try {
+    return children;
+  } catch (error) {
+    console.error(`❌ Error rendering ${fallbackTitle}:`, error);
+    return (
+      <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
+        <div style={{ padding: "2rem", textAlign: "center", color: "#ff6b6b" }}>
+          <h2>Error loading {fallbackTitle}</h2>
+          <p>{fallbackMessage || error.message}</p>
+          <pre style={{ fontSize: "0.8rem", marginTop: "1rem", textAlign: "left" }}>
+            {error.stack}
+          </pre>
+        </div>
+      </div>
+    );
+  }
+};
+
 function Home() {
   const [userName, setUserName] = useState("User");
   const [adminUnlocked, setAdminUnlocked] = useState(false);
@@ -50,51 +72,6 @@ function Home() {
   const [pageVisibility, setPageVisibility] = useState({});
   const [sectionVisibility, setSectionVisibility] = useState({});
   const [currentView, setCurrentView] = useState("home"); // "home", "dashboard", "orders-dashboard", "diesel-ledger", "production-entry", "vehicle-labour-entry", "vehicle-labour-ledger", "labour-management", "client-ledger", "income-ledger", "expense-management", "cash-ledger", "vendor-management", "procurement-entry", "procurement-report", "vehicle-management", "vehicle-wages", or "scheduled-orders"
-
-  // Memoize sections array to prevent recreation on every render
-  const sections = useMemo(() => [
-    {
-      label: "📦 Order Management",
-      items: [
-        { emoji: "📋", title: "Orders Dashboard", path: "/home/orders" },
-        { emoji: "⛽", title: "Diesel Ledger", path: "/home/diesel-ledger" },
-        { emoji: "📅", title: "Scheduled Orders", path: "/home/scheduled-orders" },
-      ]
-    },
-    {
-      label: "🏭 Production & Labour",
-      items: [
-        { emoji: "⚡", title: "Production Entry", path: "/home/production-entry" },
-        { emoji: "👷‍♂️", title: "Vehicle Labour Entry", path: "/home/v-labour-entry" },
-        { emoji: "📊", title: "Vehicle Labour Ledger", path: "/home/v-labour-ledger" },
-        { emoji: "👥", title: "Labour Management", path: "/home/manage-labour" },
-      ]
-    },
-    {
-      label: "💼 Financial Management",
-      items: [
-        { emoji: "📊", title: "Client Ledger", path: "/home/client-ledger" },
-        { emoji: "📈", title: "Income Ledger", path: "/home/income-ledger" },
-        { emoji: "💸", title: "Expense Management", path: "/home/raw-material-entry" },
-        { emoji: "💳", title: "Cash Ledger", path: "/home/cash-ledger" }
-      ]
-    },
-    {
-      label: "🚗 Vehicle Operations",
-      items: [
-        { emoji: "🚛", title: "Vehicle Management", path: "/home/manage-vehicle" },
-        { emoji: "💰", title: "Vehicle Wages", path: "/home/vehicle-wages" }
-      ]
-    },
-    {
-      label: "🏢 Procurement Management",
-      items: [
-        { emoji: "🏢", title: "Vendor Management", path: "/home/vendor-management" },
-        { emoji: "📝", title: "Procurement Entry", path: "/home/procurement-entry" },
-        { emoji: "📊", title: "Procurement Reports", path: "/home/procurement-report" }
-      ]
-    }
-  ], []);
 
   // Debounced localStorage operations to prevent excessive writes
   const debouncedSaveSettings = useCallback(
@@ -115,20 +92,55 @@ function Home() {
     []
   );
   
-  // Debug currentView changes
-  useEffect(() => {
-    console.log("🔄 Current view changed to:", currentView);
-  }, [currentView]);
   const navigate = useNavigate();
   const { selectedOrganization: selectedOrg, clearOrganization, isLoading: orgLoading } = useOrganization();
 
-  useEffect(() => {
-    console.log("Home: Organization state changed", { 
-      orgLoading, 
-      selectedOrg, 
-      localStorage: localStorage.getItem('selectedOrganization')
-    });
+  // Memoize sections array to prevent recreation on every render
+  const sections = useMemo(() => {
+    const isAdmin = selectedOrg?.role === 0;
     
+    return [
+      {
+        label: "📦 Orders And Vehicle",
+        items: [
+          { emoji: "📋", title: "Orders Dashboard", path: "/home/orders" },
+          { emoji: "⏳", title: "Pending Orders", path: "/home/pending-orders" },
+          { emoji: "⛽", title: "Diesel Ledger", path: "/home/diesel-ledger" },
+          { emoji: "🚛", title: "Vehicle Management", path: "/home/manage-vehicle" },
+          ...(isAdmin ? [{ emoji: "💰", title: "Vehicle Wages", path: "/home/vehicle-wages" }] : []),
+        ]
+      },
+      {
+        label: "🏭 Production & Labour",
+        items: [
+          { emoji: "🏭", title: "Production Entries", path: "/home/production-entries" },
+          { emoji: "👷‍♂️", title: "Vehicle Labour Entry", path: "/home/v-labour-entry" },
+          { emoji: "📊", title: "Vehicle Labour Ledger", path: "/home/v-labour-ledger" },
+          { emoji: "👥", title: "Labour Management", path: "/home/manage-labour" },
+          { emoji: "📋", title: "Unified Ledger", path: "/home/ledger" },
+        ]
+      },
+      {
+        label: "💼 Financial Management",
+        items: [
+          { emoji: "📊", title: "Client Ledger", path: "/home/client-ledger" },
+          { emoji: "📈", title: "Income Ledger", path: "/home/income-ledger" },
+          { emoji: "💸", title: "Expense Management", path: "/home/raw-material-entry" },
+          { emoji: "💳", title: "Cash Ledger", path: "/home/cash-ledger" }
+        ]
+      },
+      {
+        label: "🏢 Procurement Management",
+        items: [
+          { emoji: "🏢", title: "Vendor Management", path: "/home/vendor-management" },
+          { emoji: "📝", title: "Procurement Entry", path: "/home/procurement-entry" },
+          { emoji: "📊", title: "Procurement Reports", path: "/home/procurement-report" }
+        ]
+      }
+    ];
+  }, [selectedOrg]);
+
+  useEffect(() => {
     const user = auth.currentUser;
     if (user) {
       // Use organization member name if available, otherwise fall back to user data
@@ -148,8 +160,6 @@ function Home() {
 
   // Memoize localStorage reads to prevent excessive reads
   const savedSettings = useMemo(() => {
-    if (!selectedOrg) return { pageVisibility: {}, sectionVisibility: {} };
-    
     try {
       const savedPageVisibility = localStorage.getItem('adminPageVisibility');
       const savedSectionVisibility = localStorage.getItem('adminSectionVisibility');
@@ -162,7 +172,7 @@ function Home() {
       console.error('Failed to parse saved settings:', error);
       return { pageVisibility: {}, sectionVisibility: {} };
     }
-  }, [selectedOrg]);
+  }, []); // Remove selectedOrg dependency since settings are global
 
   // Initialize page visibility state
   useEffect(() => {
@@ -192,7 +202,28 @@ function Home() {
     navigate("/");
   };
 
-  const handlePageClick = (item) => {
+  // Memoized view mapping for efficient lookups
+  const viewMapping = useMemo(() => ({
+    "Orders Dashboard": "orders-dashboard",
+    "Pending Orders": "pending-orders",
+    "Diesel Ledger": "diesel-ledger",
+    "Vehicle Management": "vehicle-management",
+    "Vehicle Wages": "vehicle-wages",
+    "Production Entries": "production-entries",
+    "Vehicle Labour Entry": "vehicle-labour-entry",
+    "Vehicle Labour Ledger": "vehicle-labour-ledger",
+    "Labour Management": "labour-management",
+    "Unified Ledger": "ledger",
+    "Client Ledger": "client-ledger",
+    "Income Ledger": "income-ledger",
+    "Expense Management": "expense-management",
+    "Cash Ledger": "cash-ledger",
+    "Vendor Management": "vendor-management",
+    "Procurement Entry": "procurement-entry",
+    "Procurement Reports": "procurement-report"
+  }), []);
+
+  const handlePageClick = useCallback((item) => {
     // Check user role for access control
     const isAdmin = selectedOrg?.role === 0;
     
@@ -202,124 +233,20 @@ function Home() {
       return;
     }
     
-    // Handle Orders Dashboard toggle
-    if (item.title === "Orders Dashboard") {
-      setCurrentView("orders-dashboard");
-      return;
-    }
-    
-    // Handle Diesel Ledger toggle
-    if (item.title === "Diesel Ledger") {
-      setCurrentView("diesel-ledger");
-      return;
-    }
-    
-    // Handle Production Entry toggle
-    if (item.title === "Production Entry") {
-      console.log("🏭 Production Entry clicked, setting currentView to production-entry");
-      setCurrentView("production-entry");
-      console.log("🏭 setCurrentView called, currentView should be:", "production-entry");
-      return;
-    }
-    
-    // Handle Vehicle Labour Entry toggle
-    if (item.title === "Vehicle Labour Entry") {
-      console.log("👷‍♂️ Vehicle Labour Entry clicked, setting currentView to vehicle-labour-entry");
-      setCurrentView("vehicle-labour-entry");
-      return;
-    }
-    
-    // Handle Vehicle Labour Ledger toggle
-    if (item.title === "Vehicle Labour Ledger") {
-      console.log("📊 Vehicle Labour Ledger clicked, setting currentView to vehicle-labour-ledger");
-      setCurrentView("vehicle-labour-ledger");
-      return;
-    }
-    
-    // Handle Labour Management toggle
-    if (item.title === "Labour Management") {
-      console.log("👥 Labour Management clicked, setting currentView to labour-management");
-      setCurrentView("labour-management");
-      return;
-    }
-    
-    // Handle Client Ledger toggle
-    if (item.title === "Client Ledger") {
-      console.log("📊 Client Ledger clicked, setting currentView to client-ledger");
-      setCurrentView("client-ledger");
-      return;
-    }
-    
-    // Handle Income Ledger toggle
-    if (item.title === "Income Ledger") {
-      console.log("📈 Income Ledger clicked, setting currentView to income-ledger");
-      setCurrentView("income-ledger");
-      return;
-    }
-    
-    // Handle Expense Management toggle
-    if (item.title === "Expense Management") {
-      console.log("💸 Expense Management clicked, setting currentView to expense-management");
-      setCurrentView("expense-management");
-      return;
-    }
-    
-    // Handle Cash Ledger toggle
-    if (item.title === "Cash Ledger") {
-      console.log("💳 Cash Ledger clicked, setting currentView to cash-ledger");
-      setCurrentView("cash-ledger");
-      return;
-    }
-    
-    // Handle Vendor Management toggle
-    if (item.title === "Vendor Management") {
-      console.log("🏢 Vendor Management clicked, setting currentView to vendor-management");
-      setCurrentView("vendor-management");
-      return;
-    }
-    
-    // Handle Procurement Entry toggle
-    if (item.title === "Procurement Entry") {
-      console.log("📝 Procurement Entry clicked, setting currentView to procurement-entry");
-      setCurrentView("procurement-entry");
-      return;
-    }
-    
-    // Handle Procurement Reports toggle
-    if (item.title === "Procurement Reports") {
-      console.log("📊 Procurement Reports clicked, setting currentView to procurement-report");
-      setCurrentView("procurement-report");
-      return;
-    }
-    
-    // Handle Vehicle Management toggle
-    if (item.title === "Vehicle Management") {
-      console.log("🚛 Vehicle Management clicked, setting currentView to vehicle-management");
-      setCurrentView("vehicle-management");
-      return;
-    }
-    
-    // Handle Vehicle Wages toggle
-    if (item.title === "Vehicle Wages") {
-      console.log("💰 Vehicle Wages clicked, setting currentView to vehicle-wages");
-      setCurrentView("vehicle-wages");
-      return;
-    }
-    
-    // Handle Scheduled Orders toggle
-    if (item.title === "Scheduled Orders") {
-      console.log("📅 Scheduled Orders clicked, setting currentView to scheduled-orders");
-      setCurrentView("scheduled-orders");
+    // Use lookup for efficient view switching
+    const viewKey = viewMapping[item.title];
+    if (viewKey) {
+      setCurrentView(viewKey);
       return;
     }
     
     // For other pages, show a toast message since they are not implemented yet
-    toast.info(`${item.title} - Coming Soon!`);
-  };
+    toast(`${item.title} - Coming Soon!`);
+  }, [selectedOrg?.role, viewMapping]);
 
   const handleEditProfile = () => {
     // TODO: Implement edit profile functionality
-    toast.info("Edit profile functionality coming soon!");
+    toast("Edit profile functionality coming soon!");
     setShowProfileDropdown(false);
   };
 
@@ -346,7 +273,7 @@ function Home() {
     return () => document.removeEventListener('click', handleClickOutside);
   }, [showProfileDropdown]);
 
-    const renderHomeView = () => (
+    const renderHomeView = useCallback(() => (
     <div className="w-full px-6">
       {/* Dashboard Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
@@ -402,475 +329,208 @@ function Home() {
         })}
       </div>
     </div>
-  );
+  ), [sections, selectedOrg, sectionVisibility, pageVisibility, adminUnlocked, handlePageClick]);
 
-  const renderOrdersDashboardView = () => (
+  // Memoized view renderer map
+  const viewRenderers = useMemo(() => ({
+    "orders-dashboard": () => (
+      <ErrorBoundary fallbackTitle="Orders Dashboard">
+        <Suspense fallback={<LoadingSpinner message="Loading Orders Dashboard..." />}>
+          <OrdersDashboard onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    ),
+    "pending-orders": () => (
+      <ErrorBoundary fallbackTitle="Pending Orders">
+        <Suspense fallback={<LoadingSpinner message="Loading Pending Orders..." />}>
+          <PendingOrders onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    ),
+    "scheduled-orders": () => (
+      <ErrorBoundary fallbackTitle="Scheduled Orders">
+        <Suspense fallback={<LoadingSpinner message="Loading Scheduled Orders..." />}>
+          <ScheduledOrdersDashboard onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    ),
+    "diesel-ledger": () => (
+      <ErrorBoundary fallbackTitle="Diesel Ledger">
+        <Suspense fallback={<LoadingSpinner message="Loading Diesel Ledger..." />}>
+          <DieselLedger onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    ),
+    "production-entries": () => (
+      <ErrorBoundary fallbackTitle="Production Entries">
+        <Suspense fallback={<LoadingSpinner message="Loading Production Entries..." />}>
+          <ProductionEntriesPage onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    ),
+    "vehicle-labour-entry": () => (
+      <ErrorBoundary fallbackTitle="Vehicle Labour Entry">
+        <Suspense fallback={<LoadingSpinner message="Loading Vehicle Labour Entry..." />}>
+          <VehicleLabourEntry onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    ),
+    "vehicle-labour-ledger": () => (
+      <ErrorBoundary fallbackTitle="Vehicle Labour Ledger">
+        <Suspense fallback={<LoadingSpinner message="Loading Vehicle Labour Ledger..." />}>
+          <VehicleLabourWeeklyLedger onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    ),
+    "labour-management": () => (
+      <ErrorBoundary fallbackTitle="Labour Management">
+        <Suspense fallback={<LoadingSpinner message="Loading Labour Management..." />}>
+          <LabourManagement onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    ),
+    "ledger": () => (
+      <ErrorBoundary fallbackTitle="Unified Ledger">
+        <Suspense fallback={<LoadingSpinner message="Loading Unified Ledger..." />}>
+          <LedgerPage onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    ),
+    "client-ledger": () => (
+      <ErrorBoundary fallbackTitle="Client Ledger">
+        <Suspense fallback={<LoadingSpinner message="Loading Client Ledger..." />}>
+          <ClientLedger onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    ),
+    "income-ledger": () => (
+      <ErrorBoundary fallbackTitle="Income Ledger">
+        <Suspense fallback={<LoadingSpinner message="Loading Income Ledger..." />}>
+          <IncomeLedger onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    ),
+    "expense-management": () => (
+      <ErrorBoundary fallbackTitle="Expense Management">
+        <Suspense fallback={<LoadingSpinner message="Loading Expense Management..." />}>
+          <ExpenseManagement onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    ),
+    "cash-ledger": () => (
+      <ErrorBoundary fallbackTitle="Cash Ledger">
+        <Suspense fallback={<LoadingSpinner message="Loading Cash Ledger..." />}>
+          <CashLedger onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    ),
+    "vendor-management": () => (
+      <ErrorBoundary fallbackTitle="Vendor Management">
+        <Suspense fallback={<LoadingSpinner message="Loading Vendor Management..." />}>
+          <VendorManagement onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    ),
+    "procurement-entry": () => (
+      <ErrorBoundary fallbackTitle="Procurement Entry">
+        <Suspense fallback={<LoadingSpinner message="Loading Procurement Entry..." />}>
+          <ProcurementEntry onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    ),
+    "procurement-report": () => (
+      <ErrorBoundary fallbackTitle="Procurement Report">
+        <Suspense fallback={<LoadingSpinner message="Loading Procurement Report..." />}>
+          <ProcurementReport onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    ),
+    "vehicle-management": () => (
+      <ErrorBoundary fallbackTitle="Vehicle Management">
+        <Suspense fallback={<LoadingSpinner message="Loading Vehicle Management..." />}>
+          <VehicleManagement onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    ),
+    "vehicle-wages": () => (
+      <ErrorBoundary fallbackTitle="Vehicle Wages">
+        <Suspense fallback={<LoadingSpinner message="Loading Vehicle Wages..." />}>
+          <VehicleWagesManagement onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    )
+  }), []);
+
+  const renderDashboardView = useCallback(() => (
     <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-      <Suspense fallback={<LoadingSpinner message="Loading Orders Dashboard..." />}>
-        <OrdersDashboard onBack={() => setCurrentView('home')} />
-      </Suspense>
-    </div>
-  );
-
-  const renderDieselLedgerView = () => (
-    <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-      <Suspense fallback={<LoadingSpinner message="Loading Diesel Ledger..." />}>
-        <DieselLedger onBack={() => setCurrentView('home')} />
-      </Suspense>
-    </div>
-  );
-
-  const renderProductionEntryView = () => {
-    console.log("🏭 Rendering Production Entry view");
-    try {
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <Suspense fallback={<LoadingSpinner message="Loading Production Entry..." />}>
-            <ProductionEntry onBack={() => setCurrentView('home')} />
-          </Suspense>
-        </div>
-      );
-    } catch (error) {
-      console.error("❌ Error rendering Production Entry:", error);
-      console.error("❌ Error stack:", error.stack);
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <div style={{ padding: "2rem", textAlign: "center", color: "#ff6b6b" }}>
-            <h2>Error loading Production Entry</h2>
-            <p>{error.message}</p>
-            <pre style={{ fontSize: "0.8rem", marginTop: "1rem", textAlign: "left" }}>
-              {error.stack}
-            </pre>
-          </div>
-        </div>
-      );
-    }
-  };
-
-  const renderVehicleLabourEntryView = () => {
-    console.log("👷‍♂️ Rendering Vehicle Labour Entry view");
-    try {
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <Suspense fallback={<LoadingSpinner message="Loading Vehicle Labour Entry..." />}>
-            <VehicleLabourEntry onBack={() => setCurrentView('home')} />
-          </Suspense>
-        </div>
-      );
-    } catch (error) {
-      console.error("❌ Error rendering Vehicle Labour Entry:", error);
-      console.error("❌ Error stack:", error.stack);
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <div style={{ padding: "2rem", textAlign: "center", color: "#ff6b6b" }}>
-            <h2>Error loading Vehicle Labour Entry</h2>
-            <p>{error.message}</p>
-            <pre style={{ fontSize: "0.8rem", marginTop: "1rem", textAlign: "left" }}>
-              {error.stack}
-            </pre>
-          </div>
-        </div>
-      );
-    }
-  };
-
-  const renderVehicleLabourLedgerView = () => {
-    console.log("📊 Rendering Vehicle Labour Ledger view");
-    try {
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <Suspense fallback={<LoadingSpinner message="Loading Vehicle Labour Ledger..." />}>
-            <VehicleLabourWeeklyLedger onBack={() => setCurrentView('home')} />
-          </Suspense>
-        </div>
-      );
-    } catch (error) {
-      console.error("❌ Error rendering Vehicle Labour Ledger:", error);
-      console.error("❌ Error stack:", error.stack);
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <div style={{ padding: "2rem", textAlign: "center", color: "#ff6b6b" }}>
-            <h2>Error loading Vehicle Labour Ledger</h2>
-            <p>{error.message}</p>
-            <pre style={{ fontSize: "0.8rem", marginTop: "1rem", textAlign: "left" }}>
-              {error.stack}
-            </pre>
-          </div>
-        </div>
-      );
-    }
-  };
-
-  const renderLabourManagementView = () => {
-    console.log("👥 Rendering Labour Management view");
-    try {
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <Suspense fallback={<LoadingSpinner message="Loading Labour Management..." />}>
-            <LabourManagement onBack={() => setCurrentView('home')} />
-          </Suspense>
-        </div>
-      );
-    } catch (error) {
-      console.error("❌ Error rendering Labour Management:", error);
-      console.error("❌ Error stack:", error.stack);
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <div style={{ padding: "2rem", textAlign: "center", color: "#ff6b6b" }}>
-            <h2>Error loading Labour Management</h2>
-            <p>{error.message}</p>
-            <pre style={{ fontSize: "0.8rem", marginTop: "1rem", textAlign: "left" }}>
-              {error.stack}
-            </pre>
-          </div>
-        </div>
-      );
-    }
-  };
-
-  const renderClientLedgerView = () => {
-    console.log("📊 Rendering Client Ledger view");
-    try {
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <Suspense fallback={<LoadingSpinner message="Loading Client Ledger..." />}>
-            <ClientLedger onBack={() => setCurrentView('home')} />
-          </Suspense>
-        </div>
-      );
-    } catch (error) {
-      console.error("❌ Error rendering Client Ledger:", error);
-      console.error("❌ Error stack:", error.stack);
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <div style={{ padding: "2rem", textAlign: "center", color: "#ff6b6b" }}>
-            <h2>Error loading Client Ledger</h2>
-            <p>{error.message}</p>
-            <pre style={{ fontSize: "0.8rem", marginTop: "1rem", textAlign: "left" }}>
-              {error.stack}
-            </pre>
-          </div>
-        </div>
-      );
-    }
-  };
-
-  const renderIncomeLedgerView = () => {
-    console.log("📈 Rendering Income Ledger view");
-    try {
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <Suspense fallback={<LoadingSpinner message="Loading Income Ledger..." />}>
-            <IncomeLedger onBack={() => setCurrentView('home')} />
-          </Suspense>
-        </div>
-      );
-    } catch (error) {
-      console.error("❌ Error rendering Income Ledger:", error);
-      console.error("❌ Error stack:", error.stack);
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <div style={{ padding: "2rem", textAlign: "center", color: "#ff6b6b" }}>
-            <h2>Error loading Income Ledger</h2>
-            <p>{error.message}</p>
-            <pre style={{ fontSize: "0.8rem", marginTop: "1rem", textAlign: "left" }}>
-              {error.stack}
-            </pre>
-          </div>
-        </div>
-      );
-    }
-  };
-
-  const renderExpenseManagementView = () => {
-    console.log("💸 Rendering Expense Management view");
-    try {
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <Suspense fallback={<LoadingSpinner message="Loading Expense Management..." />}>
-            <ExpenseManagement onBack={() => setCurrentView('home')} />
-          </Suspense>
-        </div>
-      );
-    } catch (error) {
-      console.error("❌ Error rendering Expense Management:", error);
-      console.error("❌ Error stack:", error.stack);
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <div style={{ padding: "2rem", textAlign: "center", color: "#ff6b6b" }}>
-            <h2>Error loading Expense Management</h2>
-            <p>{error.message}</p>
-            <pre style={{ fontSize: "0.8rem", marginTop: "1rem", textAlign: "left" }}>
-              {error.stack}
-            </pre>
-          </div>
-        </div>
-      );
-    }
-  };
-
-  const renderCashLedgerView = () => {
-    console.log("💳 Rendering Cash Ledger view");
-    try {
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <Suspense fallback={<LoadingSpinner message="Loading Cash Ledger..." />}>
-            <CashLedger onBack={() => setCurrentView('home')} />
-          </Suspense>
-        </div>
-      );
-    } catch (error) {
-      console.error("❌ Error rendering Cash Ledger:", error);
-      console.error("❌ Error stack:", error.stack);
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <div style={{ padding: "2rem", textAlign: "center", color: "#ff6b6b" }}>
-            <h2>Error loading Cash Ledger</h2>
-            <p>{error.message}</p>
-            <pre style={{ fontSize: "0.8rem", marginTop: "1rem", textAlign: "left" }}>
-              {error.stack}
-            </pre>
-          </div>
-        </div>
-      );
-    }
-  };
-
-  const renderVendorManagementView = () => {
-    console.log("🏢 Rendering Vendor Management view");
-    try {
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <Suspense fallback={<LoadingSpinner message="Loading Vendor Management..." />}>
-            <VendorManagement onBack={() => setCurrentView('home')} />
-          </Suspense>
-        </div>
-      );
-    } catch (error) {
-      console.error("❌ Error rendering Vendor Management:", error);
-      console.error("❌ Error stack:", error.stack);
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <div style={{ padding: "2rem", textAlign: "center", color: "#ff6b6b" }}>
-            <h2>Error loading Vendor Management</h2>
-            <p>{error.message}</p>
-            <pre style={{ fontSize: "0.8rem", marginTop: "1rem", textAlign: "left" }}>
-              {error.stack}
-            </pre>
-          </div>
-        </div>
-      );
-    }
-  };
-
-  const renderProcurementEntryView = () => {
-    console.log("📝 Rendering Procurement Entry view");
-    try {
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <Suspense fallback={<LoadingSpinner message="Loading Procurement Entry..." />}>
-            <ProcurementEntry onBack={() => setCurrentView('home')} />
-          </Suspense>
-        </div>
-      );
-    } catch (error) {
-      console.error("❌ Error rendering Procurement Entry:", error);
-      console.error("❌ Error stack:", error.stack);
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <div style={{ padding: "2rem", textAlign: "center", color: "#ff6b6b" }}>
-            <h2>Error loading Procurement Entry</h2>
-            <p>{error.message}</p>
-            <pre style={{ fontSize: "0.8rem", marginTop: "1rem", textAlign: "left" }}>
-              {error.stack}
-            </pre>
-          </div>
-        </div>
-      );
-    }
-  };
-
-  const renderProcurementReportView = () => {
-    console.log("📊 Rendering Procurement Report view");
-    try {
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <Suspense fallback={<LoadingSpinner message="Loading Procurement Report..." />}>
-            <ProcurementReport onBack={() => setCurrentView('home')} />
-          </Suspense>
-        </div>
-      );
-    } catch (error) {
-      console.error("❌ Error rendering Procurement Report:", error);
-      console.error("❌ Error stack:", error.stack);
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <div style={{ padding: "2rem", textAlign: "center", color: "#ff6b6b" }}>
-            <h2>Error loading Procurement Report</h2>
-            <p>{error.message}</p>
-            <pre style={{ fontSize: "0.8rem", marginTop: "1rem", textAlign: "left" }}>
-              {error.stack}
-            </pre>
-          </div>
-        </div>
-      );
-    }
-  };
-
-  const renderVehicleManagementView = () => {
-    console.log("🚛 Rendering Vehicle Management view");
-    try {
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <Suspense fallback={<LoadingSpinner message="Loading Vehicle Management..." />}>
-            <VehicleManagement onBack={() => setCurrentView('home')} />
-          </Suspense>
-        </div>
-      );
-    } catch (error) {
-      console.error("❌ Error rendering Vehicle Management:", error);
-      console.error("❌ Error stack:", error.stack);
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <div style={{ padding: "2rem", textAlign: "center", color: "#ff6b6b" }}>
-            <h2>Error loading Vehicle Management</h2>
-            <p>{error.message}</p>
-            <pre style={{ fontSize: "0.8rem", marginTop: "1rem", textAlign: "left" }}>
-              {error.stack}
-            </pre>
-          </div>
-        </div>
-      );
-    }
-  };
-
-  const renderVehicleWagesView = () => {
-    console.log("💰 Rendering Vehicle Wages view");
-    try {
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <Suspense fallback={<LoadingSpinner message="Loading Vehicle Wages..." />}>
-            <VehicleWagesManagement onBack={() => setCurrentView('home')} />
-          </Suspense>
-        </div>
-      );
-    } catch (error) {
-      console.error("❌ Error rendering Vehicle Wages:", error);
-      console.error("❌ Error stack:", error.stack);
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <div style={{ padding: "2rem", textAlign: "center", color: "#ff6b6b" }}>
-            <h2>Error loading Vehicle Wages</h2>
-            <p>{error.message}</p>
-            <pre style={{ fontSize: "0.8rem", marginTop: "1rem", textAlign: "left" }}>
-              {error.stack}
-            </pre>
-          </div>
-        </div>
-      );
-    }
-  };
-
-  const renderScheduledOrdersView = () => {
-    console.log("📅 Rendering Scheduled Orders view");
-    try {
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <Suspense fallback={<LoadingSpinner message="Loading Scheduled Orders..." />}>
-            <ScheduledOrdersDashboard />
-          </Suspense>
-        </div>
-      );
-    } catch (error) {
-      console.error("❌ Error rendering Scheduled Orders:", error);
-      console.error("❌ Error stack:", error.stack);
-      return (
-        <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-          <div style={{ padding: "2rem", textAlign: "center", color: "#ff6b6b" }}>
-            <h2>Error loading Scheduled Orders</h2>
-            <p>{error.message}</p>
-            <pre style={{ fontSize: "0.8rem", marginTop: "1rem", textAlign: "left" }}>
-              {error.stack}
-            </pre>
-          </div>
-        </div>
-      );
-    }
-  };
-
-  const renderDashboardView = () => {
-    console.log("📊 Rendering Dashboard view");
-    return (
-      <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
-        <div className="w-full px-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-            {/* Quick Stats */}
-            <div className="bg-gradient-to-br from-[rgba(25,25,27,0.8)] via-[rgba(20,20,22,0.6)] to-[rgba(25,25,27,0.8)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-3xl p-6 shadow-2xl">
-              <h3 className="text-xl font-bold text-gray-100 mb-4">📊 Quick Stats</h3>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-300">Active Orders</span>
-                  <span className="text-blue-400 font-bold">12</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-300">Pending Tasks</span>
-                  <span className="text-orange-400 font-bold">5</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-300">This Month Revenue</span>
-                  <span className="text-green-400 font-bold">₹2,45,000</span>
-                </div>
+      <div className="w-full px-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+          {/* Quick Stats */}
+          <div className="bg-gradient-to-br from-[rgba(25,25,27,0.8)] via-[rgba(20,20,22,0.6)] to-[rgba(25,25,27,0.8)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-3xl p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-gray-100 mb-4">📊 Quick Stats</h3>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300">Active Orders</span>
+                <span className="text-blue-400 font-bold">12</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300">Pending Tasks</span>
+                <span className="text-orange-400 font-bold">5</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300">This Month Revenue</span>
+                <span className="text-green-400 font-bold">₹2,45,000</span>
               </div>
             </div>
+          </div>
 
-            {/* Recent Activity */}
-            <div className="bg-gradient-to-br from-[rgba(25,25,27,0.8)] via-[rgba(20,20,22,0.6)] to-[rgba(25,25,27,0.8)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-3xl p-6 shadow-2xl">
-              <h3 className="text-xl font-bold text-gray-100 mb-4">🕒 Recent Activity</h3>
-              <div className="space-y-3">
-                <div className="text-sm text-gray-300">
-                  <span className="text-blue-400">📋</span> New order created
-                  <div className="text-xs text-gray-500">2 hours ago</div>
-                </div>
-                <div className="text-sm text-gray-300">
-                  <span className="text-green-400">⚡</span> Production entry completed
-                  <div className="text-xs text-gray-500">4 hours ago</div>
-                </div>
-                <div className="text-sm text-gray-300">
-                  <span className="text-purple-400">👷‍♂️</span> Labour entry updated
-                  <div className="text-xs text-gray-500">6 hours ago</div>
-                </div>
+          {/* Recent Activity */}
+          <div className="bg-gradient-to-br from-[rgba(25,25,27,0.8)] via-[rgba(20,20,22,0.6)] to-[rgba(25,25,27,0.8)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-3xl p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-gray-100 mb-4">🕒 Recent Activity</h3>
+            <div className="space-y-3">
+              <div className="text-sm text-gray-300">
+                <span className="text-blue-400">📋</span> New order created
+                <div className="text-xs text-gray-500">2 hours ago</div>
+              </div>
+              <div className="text-sm text-gray-300">
+                <span className="text-green-400">⚡</span> Production entry completed
+                <div className="text-xs text-gray-500">4 hours ago</div>
+              </div>
+              <div className="text-sm text-gray-300">
+                <span className="text-purple-400">👷‍♂️</span> Labour entry updated
+                <div className="text-xs text-gray-500">6 hours ago</div>
               </div>
             </div>
+          </div>
 
-            {/* Quick Actions */}
-            <div className="bg-gradient-to-br from-[rgba(25,25,27,0.8)] via-[rgba(20,20,22,0.6)] to-[rgba(25,25,27,0.8)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-3xl p-6 shadow-2xl">
-              <h3 className="text-xl font-bold text-gray-100 mb-4">🚀 Quick Actions</h3>
-              <div className="space-y-3">
-                <button 
-                  onClick={() => setCurrentView("orders-dashboard")}
-                  className="w-full text-left p-3 bg-blue-500/20 hover:bg-blue-500/30 rounded-lg transition-colors"
-                >
-                  <span className="text-blue-400">📋</span> New Order
-                </button>
-                <button 
-                  onClick={() => setCurrentView("production-entry")}
-                  className="w-full text-left p-3 bg-green-500/20 hover:bg-green-500/30 rounded-lg transition-colors"
-                >
-                  <span className="text-green-400">⚡</span> Production Entry
-                </button>
-                <button 
-                  onClick={() => setCurrentView("vehicle-labour-entry")}
-                  className="w-full text-left p-3 bg-purple-500/20 hover:bg-purple-500/30 rounded-lg transition-colors"
-                >
-                  <span className="text-purple-400">👷‍♂️</span> Labour Entry
-                </button>
-              </div>
+          {/* Quick Actions */}
+          <div className="bg-gradient-to-br from-[rgba(25,25,27,0.8)] via-[rgba(20,20,22,0.6)] to-[rgba(25,25,27,0.8)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-3xl p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-gray-100 mb-4">🚀 Quick Actions</h3>
+            <div className="space-y-3">
+              <button 
+                onClick={() => setCurrentView("orders-dashboard")}
+                className="w-full text-left p-3 bg-blue-500/20 hover:bg-blue-500/30 rounded-lg transition-colors"
+              >
+                <span className="text-blue-400">📋</span> New Order
+              </button>
+              <button 
+                onClick={() => setCurrentView("production-entries")}
+                className="w-full text-left p-3 bg-green-500/20 hover:bg-green-500/30 rounded-lg transition-colors"
+              >
+                <span className="text-green-400">⚡</span> Production Entry
+              </button>
+              <button 
+                onClick={() => setCurrentView("vehicle-labour-entry")}
+                className="w-full text-left p-3 bg-purple-500/20 hover:bg-purple-500/30 rounded-lg transition-colors"
+              >
+                <span className="text-purple-400">👷‍♂️</span> Labour Entry
+              </button>
             </div>
           </div>
         </div>
       </div>
-    );
-  };
+    </div>
+  ), []);
 
   return (
     <div className="min-h-screen w-full flex flex-col bg-[rgba(20,20,22,0.9)]">
@@ -881,13 +541,16 @@ function Home() {
           <div className="flex items-center space-x-6">
             <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent flex items-center gap-3 transition-all duration-500 ease-in-out">
               <span className="transition-all duration-500 ease-in-out">
-                {currentView === "dashboard" ? "📊 Dashboard" :
+                {                 currentView === "dashboard" ? "📊 Dashboard" :
                  currentView === "orders-dashboard" ? "📋 Orders Dashboard" : 
-                 currentView === "diesel-ledger" ? "⛽ Diesel Ledger" : 
-                 currentView === "production-entry" ? "🏭 Production Entry" :
+                 currentView === "pending-orders" ? "⏳ Pending Orders" :
+                 currentView === "scheduled-orders" ? "Scheduled Orders" :
+                 currentView === "diesel-ledger" ? "⛽ Diesel Ledger" :
+                 currentView === "production-entries" ? "🏭 Production Entries" :
                  currentView === "vehicle-labour-entry" ? "👷‍♂️ Vehicle Labour Entry" :
                  currentView === "vehicle-labour-ledger" ? "📊 Vehicle Labour Ledger" :
                  currentView === "labour-management" ? "👥 Labour Management" :
+                 currentView === "ledger" ? "📋 Unified Ledger" :
                  currentView === "client-ledger" ? "📊 Client Ledger" :
                  currentView === "income-ledger" ? "📈 Income Ledger" :
                  currentView === "expense-management" ? "💸 Expense Management" :
@@ -897,7 +560,6 @@ function Home() {
                  currentView === "procurement-report" ? "📊 Procurement Reports" :
                  currentView === "vehicle-management" ? "🚛 Vehicle Management" :
                  currentView === "vehicle-wages" ? "💰 Vehicle Wages" :
-                 currentView === "scheduled-orders" ? "📅 Scheduled Orders" :
                  `PaveHome - ${selectedOrg?.orgName}`}
               </span>
             </h1>
@@ -916,6 +578,7 @@ function Home() {
             >
               <span className="transition-all duration-300 ease-in-out">Home</span>
             </button>
+            
             
             {/* Scheduled Orders Button */}
             <button 
@@ -1061,28 +724,21 @@ function Home() {
           <div className={`transition-all duration-500 ease-in-out ${
             currentView === "home" ? "opacity-100 translate-y-0" : 
             currentView === "dashboard" ? "opacity-100 translate-y-0" :
-            currentView === "scheduled-orders" ? "opacity-100 translate-y-0" :
             "opacity-100 translate-y-0"
           }`}>
             {(() => {
-              console.log("🏠 Current view:", currentView);
               if (currentView === "dashboard") return renderDashboardView();
-              if (currentView === "orders-dashboard") return renderOrdersDashboardView();
-              if (currentView === "diesel-ledger") return renderDieselLedgerView();
-              if (currentView === "production-entry") return renderProductionEntryView();
-              if (currentView === "vehicle-labour-entry") return renderVehicleLabourEntryView();
-              if (currentView === "vehicle-labour-ledger") return renderVehicleLabourLedgerView();
-              if (currentView === "labour-management") return renderLabourManagementView();
-              if (currentView === "client-ledger") return renderClientLedgerView();
-              if (currentView === "income-ledger") return renderIncomeLedgerView();
-              if (currentView === "expense-management") return renderExpenseManagementView();
-              if (currentView === "cash-ledger") return renderCashLedgerView();
-              if (currentView === "vendor-management") return renderVendorManagementView();
-              if (currentView === "procurement-entry") return renderProcurementEntryView();
-              if (currentView === "procurement-report") return renderProcurementReportView();
-              if (currentView === "vehicle-management") return renderVehicleManagementView();
-              if (currentView === "vehicle-wages") return renderVehicleWagesView();
-              if (currentView === "scheduled-orders") return renderScheduledOrdersView();
+              if (currentView === "home") return renderHomeView();
+              
+              const renderer = viewRenderers[currentView];
+              if (renderer) {
+                return (
+                  <div className="dashboard-inner-wrapper transition-all duration-300 ease-in-out">
+                    {renderer()}
+                  </div>
+                );
+              }
+              
               return renderHomeView();
             })()}
           </div>

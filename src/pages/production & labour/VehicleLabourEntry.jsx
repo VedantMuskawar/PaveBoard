@@ -1,9 +1,19 @@
 import React, { useState, useEffect } from "react";
 import { db } from "../../config/firebase";
-import { collection, query, where, getDocs, Timestamp, addDoc, serverTimestamp, deleteDoc, updateDoc, doc } from "firebase/firestore";
+import { collection, query, where, getDocs, Timestamp, addDoc, serverTimestamp, deleteDoc, updateDoc, doc, writeBatch, increment } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 import { useOrganization } from "../../contexts/OrganizationContext";
-import { Button, Card, Input } from "../../components/ui";
+import { 
+  DieselPage,
+  PageHeader,
+  FilterBar,
+  Button,
+  Card,
+  Input,
+  LoadingState,
+  EmptyState
+} from "../../components/ui";
+import { toast } from "react-hot-toast";
 import "./VehicleLabourEntry.css";
 
 // ---- Apple-like shared styles (inspired by Orders.jsx) ----
@@ -75,133 +85,162 @@ const VLabourEntry = ({ onBack }) => {
   const [labourSelections, setLabourSelections] = useState({});
   const [confirmedLabours, setConfirmedLabours] = useState({});
 
+  // Database read counter
+  const [readCount, setReadCount] = useState(0);
+  
   // Check if organization is selected
   useEffect(() => {
-    if (!selectedOrg) {
-      console.error("No organization selected");
+    if (!orgID) {
       return;
     }
-  }, [selectedOrg]);
+  }, [orgID]);
   
 
 
   useEffect(() => {
     const fetchMemos = async () => {
+      if (!orgID) {
+        return;
+      }
+      
+      let totalReads = 0;
       const dateStart = new Date(selectedDate);
       dateStart.setHours(0, 0, 0, 0);
       const dateEnd = new Date(selectedDate);
       dateEnd.setHours(23, 59, 59, 999);
 
-      const q = query(
-        collection(db, "DELIVERY_MEMOS"),
-        where("deliveryDate", ">=", Timestamp.fromDate(dateStart)),
-        where("deliveryDate", "<=", Timestamp.fromDate(dateEnd))
-      );
-
-      const snapshot = await getDocs(q);
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      console.log("[DEBUG] Fetched DELIVERY_MEMOs:", data);
-      setMemos(data);
-
-      const wageSnap = await getDocs(collection(db, "VEHICLE_WAGES"));
-      const wageData = wageSnap.docs.map(doc => doc.data());
-      setVehicleWages(wageData);
-      console.log("[DEBUG] Fetched VEHICLE_WAGES:", wageData);
-
-      const laboursSnap = await getDocs(
-        query(collection(db, "LABOURS"), where("tags", "array-contains-any", ["Loader", "Unloader"]))
-      );
-      const labourOptions = laboursSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setLabourOptions(labourOptions);
-
-      // Fetch WAGE_ENTRIES for selected date and orgID
-      const wageSnap2 = await getDocs(
-        query(
-          collection(db, "WAGE_ENTRIES"),
-          where("date", ">=", Timestamp.fromDate(dateStart)),
-          where("date", "<=", Timestamp.fromDate(dateEnd)),
+      try {
+        // First, let's check if there are any delivery memos for this org at all
+        const allMemosQuery = query(
+          collection(db, "DELIVERY_MEMOS"),
           where("orgID", "==", orgID)
-        )
-      );
-      const wageData2 = wageSnap2.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      const grouped = {};
-      wageData2.forEach(entry => {
-        const batchID = entry.assignedBatchID;
-        if (!grouped[batchID]) grouped[batchID] = [];
-        grouped[batchID].push({
-          name: entry.labourName,
-          id: entry.labourID,
-          wage: entry.wageAmount,
-          role: entry.labourType
+        );
+        const allMemosSnap = await getDocs(allMemosQuery);
+        
+        // Use the already fetched memos and filter by date in JavaScript to avoid index issues
+        const filteredMemos = allMemosSnap.docs.filter(doc => {
+          const data = doc.data();
+          const memoDate = data.deliveryDate || data.dispatchStart || data.createdAt;
+          if (!memoDate) return false;
+          
+          const memoDateObj = memoDate.toDate ? memoDate.toDate() : new Date(memoDate);
+          return memoDateObj >= dateStart && memoDateObj <= dateEnd;
         });
-      });
-      setConfirmedLabours(grouped);
-      const savedMap = {};
-      Object.keys(grouped).forEach(batchID => {
-        savedMap[batchID] = { saved: true, confirmed: true };
-      });
-      setLabourSelections(savedMap);
+        
+        
+        // Fetch wage entries for org (avoiding composite index)
+        const wageEntriesQuery = query(
+          collection(db, "WAGES_ENTRIES"),
+          where("orgID", "==", orgID)
+        );
+        const allWageEntriesSnap = await getDocs(wageEntriesQuery);
+        
+        // Filter wage entries by date in JavaScript
+        const filteredWageEntries = allWageEntriesSnap.docs.filter(doc => {
+          const data = doc.data();
+          const entryDate = data.date;
+          if (!entryDate) return false;
+          
+          const entryDateObj = entryDate.toDate ? entryDate.toDate() : new Date(entryDate);
+          return entryDateObj >= dateStart && entryDateObj <= dateEnd;
+        });
+        
+        
+        // Parallel fetch for other collections
+        const [vehicleWagesSnap, employeesSnap] = await Promise.all([
+          getDocs(collection(db, "VEHICLE_WAGES")),
+          getDocs(query(
+            collection(db, "employees"),
+            where("orgID", "==", orgID),
+            where("employeeTags", "array-contains-any", ["loader", "unloader"]),
+            where("isActive", "==", true)
+          ))
+        ]);
+        
+        totalReads = allMemosSnap.size + vehicleWagesSnap.size + employeesSnap.size + allWageEntriesSnap.size;
+        
+        // Process delivery memos (using filtered results)
+        const memosData = filteredMemos.map(doc => ({ id: doc.id, ...doc.data() }));
+        setMemos(memosData);
+
+        // Process vehicle wages
+        const wageData = vehicleWagesSnap.docs.map(doc => doc.data());
+        setVehicleWages(wageData);
+
+        // Process employees (migrated from LABOURS)
+        const employeeOptions = employeesSnap.docs.map(doc => ({
+          id: doc.id,
+          labourID: doc.data().labourID,
+          name: doc.data().name,
+          ...doc.data()
+        }));
+        setLabourOptions(employeeOptions);
+
+        // Process wage entries (using filtered results)
+        const wageData2 = filteredWageEntries.map(doc => ({ id: doc.id, ...doc.data() }));
+        const grouped = {};
+        wageData2.forEach(entry => {
+          const batchID = entry.assignedBatchID;
+          if (!grouped[batchID]) grouped[batchID] = [];
+          grouped[batchID].push({
+            name: entry.labourName,
+            id: entry.labourID,
+            wage: entry.wageAmount,
+            role: entry.labourType
+          });
+        });
+        setConfirmedLabours(grouped);
+        
+        const savedMap = {};
+        Object.keys(grouped).forEach(batchID => {
+          savedMap[batchID] = { saved: true, confirmed: true };
+        });
+        setLabourSelections(savedMap);
+        
+        setReadCount(totalReads);
+      } catch (error) {
+        console.error("Error fetching labour data:", error);
+      }
     };
 
     fetchMemos();
-  }, [selectedDate]);
+  }, [selectedDate, orgID]);
 
   return (
-    <div
-      className="apple-root apple-font-stack"
-      style={{
-        minHeight: "100vh",
-        background: "radial-gradient(1200px 800px at 20% -10%, #1f232a 0%, #0b0d0f 60%)",
-        color: "#f5f5f7",
-        WebkitFontSmoothing: "antialiased",
-        MozOsxFontSmoothing: "grayscale",
-        letterSpacing: "0.01em"
-      }}
-    >
-      {/* Page Header */}
-      <header className="apple-header" style={{
-        padding: "0.75rem 1rem",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        fontSize: "1.2rem",
-        fontWeight: 700,
-        position: "sticky",
-        top: 0,
-        zIndex: 100,
-      }}>
-        <div style={{
-          fontSize: "0.95rem",
-          cursor: "pointer",
-          color: "#9ba3ae",
-          padding: "6px 10px",
-          borderRadius: 10,
-          border: "1px solid rgba(255,255,255,0.08)",
-          background: "linear-gradient(180deg, rgba(40,40,42,0.8), rgba(26,26,28,0.8))",
-          boxShadow: "0 6px 18px rgba(0,0,0,0.25)",
-          userSelect: "none",
-        }} onClick={onBack || (() => window.history.back())}>←</div>
-        <div>Vehicle Labour Entries</div>
+    <DieselPage>
+      <PageHeader
+        title="Vehicle Labour Entries"
+        onBack={onBack || (() => window.history.back())}
+        role={isAdmin ? "admin" : "manager"}
+        roleDisplay={isAdmin ? "👑 Admin" : "👔 Manager"}
+      >
         <div style={{ 
-          fontSize: "0.9rem", 
+          fontSize: "0.8rem", 
           color: "#9ba3ae",
-          padding: "4px 8px",
-          borderRadius: "6px",
-          background: isAdmin ? "rgba(50,215,75,0.2)" : "rgba(10,132,255,0.2)",
-          border: isAdmin ? "1px solid rgba(50,215,75,0.4)" : "1px solid rgba(10,132,255,0.4)"
+          padding: "2px 6px",
+          borderRadius: "4px",
+          background: "rgba(255,255,255,0.1)",
+          border: "1px solid rgba(255,255,255,0.2)"
         }}>
-          {isAdmin ? "👑 Admin" : "👔 Manager"}
+          📊 {readCount} reads
         </div>
-        
+      </PageHeader>
 
-      </header>
+      {/* Filter Bar */}
+      <FilterBar style={{ marginTop: "1.5rem", marginBottom: "2rem" }}>
+        <FilterBar.Actions>
+          <Input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            style={{ width: "200px" }}
+          />
+        </FilterBar.Actions>
+      </FilterBar>
 
       {/* Main content container with consistent spacing */}
       <div style={{ marginTop: "1.5rem", padding: "0 2rem" }}>
-        <div className="card-surface" style={{
+        <Card style={{
           padding: "1.25rem 1.25rem",
           margin: "1.5rem auto 1.5rem",
           display: "flex",
@@ -210,14 +249,6 @@ const VLabourEntry = ({ onBack }) => {
           borderRadius: "20px",
           maxWidth: "1100px"
         }}>
-          <div style={{ display: "flex", justifyContent: "center", marginTop: "0" }}>
-            <Input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="max-w-xs"
-            />
-          </div>
           
           {/* Role-based Access Info */}
           {!isAdmin && (
@@ -280,7 +311,7 @@ const VLabourEntry = ({ onBack }) => {
               </select>
             </div>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Split Content Area */}
@@ -333,7 +364,7 @@ const VLabourEntry = ({ onBack }) => {
                   <tr key={id}>
                     <td>{name}</td>
                     <td style={{ textAlign: "center" }}>{count}</td>
-                    <td style={{ textAlign: "right" }}>₹{total.toFixed(2)}</td>
+                    <td style={{ textAlign: "right" }}>₹{(total / 100).toFixed(2)}</td>
                   </tr>
                 ))
               }
@@ -513,13 +544,15 @@ const VLabourEntry = ({ onBack }) => {
                                   ).map(opt => opt.value)
                                 : loaders;
 
-                              const totalWage = vehicleWages.find(w => w.unitCount === memo.productQuant)?.totalWage || 0;
-                              const loaderPool = totalWage / 2;
-                              const unloaderPool = totalWage / 2;
+                              const totalWageRupees = vehicleWages.find(w => w.unitCount === memo.productQuant)?.totalWage || 0;
+                              const totalWage = Math.round(totalWageRupees * 100); // Convert rupees to paise
+                              const loaderPool = Math.floor(totalWage / 2);
+                              const unloaderPool = totalWage - loaderPool; // Ensure total adds up correctly
                               const numLoaders = loaders.length;
                               const numUnloaders = unloaders.length;
-                              const loaderWage = numLoaders > 0 ? loaderPool / numLoaders : 0;
-                              const unloaderWage = numUnloaders > 0 ? unloaderPool / numUnloaders : 0;
+                              const loaderWage = numLoaders > 0 ? Math.floor(loaderPool / numLoaders) : 0;
+                              const unloaderWage = numUnloaders > 0 ? Math.floor(unloaderPool / numUnloaders) : 0;
+                              
 
                               const loaderRows = loaders.map(labourID => {
                                 const labour = labourOptions.find(l => l.labourID === labourID);
@@ -547,7 +580,7 @@ const VLabourEntry = ({ onBack }) => {
                                   return {
                                     name: labour?.name || labourID,
                                     id: labourID,
-                                    wage: loaderWage + unloaderWage,
+                                    wage: Math.floor(loaderWage + unloaderWage),
                                     role: "both"
                                   };
                                 });
@@ -557,7 +590,7 @@ const VLabourEntry = ({ onBack }) => {
                                   if (!merged[entry.id]) {
                                     merged[entry.id] = { ...entry };
                                   } else {
-                                    merged[entry.id].wage += entry.wage;
+                                    merged[entry.id].wage = Math.floor(merged[entry.id].wage + entry.wage);
                                     merged[entry.id].role = "both";
                                   }
                                 });
@@ -576,7 +609,7 @@ const VLabourEntry = ({ onBack }) => {
                                 }
                               }));
                             } else {
-                              // Save logic: Write entries to Firestore
+                              // Save logic: Use batch write operation like ProductionService
                               const entries = confirmedLabours[memo.id] || [];
                               const assignedBatchID = memo.id;
                               const category = "Vehicle";
@@ -587,9 +620,21 @@ const VLabourEntry = ({ onBack }) => {
                               const vehicleID = memo.vehicleNumber;
                               const vehicleType = memo.type || "";
 
-                              let allSuccess = true;
-                              await Promise.all(
-                                entries.map(async (entry) => {
+                              try {
+                                const batch = writeBatch(db);
+                                
+                                // First, get all employee documents we need to update
+                                const employeeUpdatePromises = entries.map(async (entry) => {
+                                  const employeeRef = query(collection(db, "employees"), where("labourID", "==", entry.id));
+                                  const employeeSnap = await getDocs(employeeRef);
+                                  return { entry, employeeSnap };
+                                });
+                                
+                                const employeeData = await Promise.all(employeeUpdatePromises);
+                                
+                                // Create wage entries and update balances in batch
+                                for (const { entry, employeeSnap } of employeeData) {
+                                  const wageEntryRef = doc(collection(db, "WAGES_ENTRIES"));
                                   const wageEntry = {
                                     assignedBatchID,
                                     category,
@@ -610,28 +655,32 @@ const VLabourEntry = ({ onBack }) => {
                                     vehicleType,
                                     wageAmount: entry.wage
                                   };
-                                  try {
-                                    await addDoc(collection(db, "WAGE_ENTRIES"), wageEntry);
-                                    console.log("[SAVE SUCCESS]", wageEntry);
-                                    // Update LABOURS currentBalance
-                                    try {
-                                      const labourRef = query(collection(db, "LABOURS"), where("labourID", "==", entry.id));
-                                      const labourSnap = await getDocs(labourRef);
-                                      labourSnap.forEach(async (docSnap) => {
-                                        const current = docSnap.data().currentBalance || 0;
-                                        const updatedBalance = current + entry.wage;
-                                        await updateDoc(doc(db, "LABOURS", docSnap.id), { currentBalance: updatedBalance });
+                                  
+                                  batch.set(wageEntryRef, wageEntry);
+                                  
+                                  // Update EMPLOYEE currentBalance using increment (like ProductionService)
+                                  employeeSnap.forEach((docSnap) => {
+                                    const employeeDocRef = doc(db, "employees", docSnap.id);
+                                    batch.update(employeeDocRef, {
+                                      currentBalance: increment(entry.wage),
+                                      updatedAt: serverTimestamp()
+                                    });
+                                    
+                                    // Update account balance if employee has an account
+                                    const employeeData = docSnap.data();
+                                    if (employeeData.accountId) {
+                                      const accountRef = doc(db, "employeeaccounts", employeeData.accountId);
+                                      batch.update(accountRef, {
+                                        currentBalance: increment(entry.wage),
+                                        updatedAt: serverTimestamp()
                                       });
-                                    } catch (e) {
-                                      console.error("Failed to update currentBalance", e);
                                     }
-                                  } catch (err) {
-                                    allSuccess = false;
-                                    console.error("[SAVE ERROR]", err);
-                                  }
-                                })
-                              );
-                              if (allSuccess) {
+                                  });
+                                }
+                                
+                                // Commit all operations atomically
+                                await batch.commit();
+                                
                                 setLabourSelections(prev => ({
                                   ...prev,
                                   [memo.id]: {
@@ -639,6 +688,9 @@ const VLabourEntry = ({ onBack }) => {
                                     saved: true
                                   }
                                 }));
+                              } catch (err) {
+                                console.error("Failed to save wage entries:", err);
+                                toast.error("Failed to save wage entries");
                               }
                             }
                           }}
@@ -659,32 +711,66 @@ const VLabourEntry = ({ onBack }) => {
                                   return;
                                 }
                                 
-                                // Delete entries from Firestore for this memo and subtract wage from LABOURS currentBalance
+                                // Delete entries using batch write operation (like ProductionService)
                                 const entries = confirmedLabours[memo.id] || [];
-                                await Promise.all(
-                                  entries.map(async (entry) => {
+                                
+                                try {
+                                  const batch = writeBatch(db);
+                                  
+                                  // First, get all wage entries and employee data we need to process
+                                  const wageEntryPromises = entries.map(async (entry) => {
                                     const q = query(
-                                      collection(db, "WAGE_ENTRIES"),
+                                      collection(db, "WAGES_ENTRIES"),
                                       where("entryID", "==", `${memo.id}_${entry.id}`)
                                     );
                                     const snap = await getDocs(q);
-                                    snap.forEach(async docRef => {
+                                    
+                                    const employeeRef = query(collection(db, "employees"), where("labourID", "==", entry.id));
+                                    const employeeSnap = await getDocs(employeeRef);
+                                    
+                                    return { snap, employeeSnap };
+                                  });
+                                  
+                                  const wageData = await Promise.all(wageEntryPromises);
+                                  
+                                  // Process deletions and balance reversions
+                                  for (let i = 0; i < entries.length; i++) {
+                                    const entry = entries[i];
+                                    const { snap, employeeSnap } = wageData[i];
+                                    
+                                    snap.forEach((docRef) => {
                                       const wageAmount = docRef.data().wageAmount || 0;
-                                      await deleteDoc(docRef.ref);
-                                      try {
-                                        const labourRef = query(collection(db, "LABOURS"), where("labourID", "==", entry.id));
-                                        const labourSnap = await getDocs(labourRef);
-                                        labourSnap.forEach(async (docSnap) => {
-                                          const current = docSnap.data().currentBalance || 0;
-                                          const updatedBalance = current - wageAmount;
-                                          await updateDoc(doc(db, "LABOURS", docSnap.id), { currentBalance: updatedBalance });
+                                      
+                                      // Delete wage entry
+                                      batch.delete(docRef.ref);
+                                      
+                                      // Revert employee balance using increment (subtract)
+                                      employeeSnap.forEach((docSnap) => {
+                                        const employeeDocRef = doc(db, "employees", docSnap.id);
+                                        batch.update(employeeDocRef, {
+                                          currentBalance: increment(-wageAmount),
+                                          updatedAt: serverTimestamp()
                                         });
-                                      } catch (e) {
-                                        console.error("Failed to update currentBalance on discard", e);
-                                      }
+                                        
+                                        // Revert account balance if employee has an account
+                                        const employeeData = docSnap.data();
+                                        if (employeeData.accountId) {
+                                          const accountRef = doc(db, "employeeaccounts", employeeData.accountId);
+                                          batch.update(accountRef, {
+                                            currentBalance: increment(-wageAmount),
+                                            updatedAt: serverTimestamp()
+                                          });
+                                        }
+                                      });
                                     });
-                                  })
-                                );
+                                  }
+                                  
+                                  // Commit all operations atomically
+                                  await batch.commit();
+                                } catch (e) {
+                                  console.error("Failed to discard wage entries:", e);
+                                  toast.error("Failed to discard wage entries");
+                                }
                                 setLabourSelections(prev => ({
                                   ...prev,
                                   [memo.id]: {}
@@ -735,7 +821,7 @@ const VLabourEntry = ({ onBack }) => {
                                       alignItems: "center"
                                     }}
                                   >
-                                    ₹{labour.wage.toFixed(2)}
+                                    ₹{(labour.wage / 100).toFixed(2)}
                                     {!labourSelections[memo.id]?.saved && (
                                       <span
                                         style={{
@@ -780,7 +866,7 @@ const VLabourEntry = ({ onBack }) => {
           </div>
         </Card>
       </div>
-    </div>
+    </DieselPage>
   );
 };
 

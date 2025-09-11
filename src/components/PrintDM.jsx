@@ -8,10 +8,33 @@ const PrintDM = forwardRef(({ dmNumber, isOpen = true, onClose }, ref) => {
   const [notFound, setNotFound] = useState(false);
   const printRef = useRef();
 
+  // Helper function to safely calculate total amount
+  const calculateTotal = (quantity, unitPrice) => {
+    const qty = Number(quantity) || 0;
+    const price = Number(unitPrice) || 0;
+    
+    // Validate reasonable bounds
+    if (qty < 0 || price < 0) {
+      console.warn('Negative values detected in calculateTotal:', { quantity, unitPrice });
+      return 0;
+    }
+    
+    if (qty > 1000000 || price > 1000000) {
+      console.warn('Extremely large values detected in calculateTotal:', { quantity, unitPrice });
+      return 0;
+    }
+    
+    return qty * price;
+  };
+
   useEffect(() => {
     if (!dmNumber) return;
+    
+    let isCancelled = false; // Flag to prevent state updates if component unmounts
+    
     setDMData(null);
     setNotFound(false);
+    
     const fetchDM = async () => {
       try {
         const q = query(
@@ -29,24 +52,42 @@ const PrintDM = forwardRef(({ dmNumber, isOpen = true, onClose }, ref) => {
             where("orgID", "==", data.orgID)
           );
           const schSnap = await getDocs(schQuery);
-          if (!schSnap.empty) {
-            const schData = schSnap.docs[0].data();
-            setDMData({
-              ...data,
-              clientPhone: schData.clientPhoneNumber || data.clientPhone || "N/A",
-              driverName: schData.driverName || data.driverName || "N/A"
-            });
-          } else {
-            setDMData(data);
+          if (!isCancelled) {
+            if (!schSnap.empty) {
+              const schData = schSnap.docs[0].data();
+              setDMData({
+                ...data,
+                clientPhone: schData.clientPhoneNumber || data.clientPhone || "N/A",
+                driverName: schData.driverName || data.driverName || "N/A",
+                // Ensure numeric fields are properly formatted
+                productQuant: Number(data.productQuant) || 0,
+                productUnitPrice: Number(data.productUnitPrice) || 0
+              });
+            } else {
+              setDMData({
+                ...data,
+                // Ensure numeric fields are properly formatted
+                productQuant: Number(data.productQuant) || 0,
+                productUnitPrice: Number(data.productUnitPrice) || 0
+              });
+            }
           }
-        } else {
+        } else if (!isCancelled) {
           setNotFound(true);
         }
       } catch (e) {
-        setNotFound(true);
+        console.error('Error fetching DM:', e);
+        if (!isCancelled) {
+          setNotFound(true);
+        }
       }
     };
+    
     fetchDM();
+    
+    return () => {
+      isCancelled = true;
+    };
   }, [dmNumber]);
 
   // Print function with proper print window handling
@@ -180,7 +221,7 @@ const PrintDM = forwardRef(({ dmNumber, isOpen = true, onClose }, ref) => {
                             />
                           </div>
                           <div style={styles.qrLabelLarge}>Lakshmee Intelligent Technologies</div>
-                          <div style={styles.qrAmountLarge}>Scan to pay ₹{(dmData.productQuaulent * dmData.productUnitPrice).toLocaleString()}</div>
+                          <div style={styles.qrAmountLarge}>Scan to pay ₹{calculateTotal(dmData.productQuant, dmData.productUnitPrice).toLocaleString()}</div>
                         </div>
                       </div>
                       <div style={styles.rightColumn}>
@@ -213,7 +254,7 @@ const PrintDM = forwardRef(({ dmNumber, isOpen = true, onClose }, ref) => {
                           <div style={styles.tableRow}><span>📦 Product</span><span>{dmData.productName}</span></div>
                           <div style={styles.tableRow}><span>🔢 Quantity</span><span>{dmData.productQuant}</span></div>
                           <div style={styles.tableRow}><span>💰 Unit Price</span><span>₹{dmData.productUnitPrice}</span></div>
-                          <div style={styles.tableRowTotal}><span>🧾 Total</span><span>₹{(dmData.productQuant * dmData.productUnitPrice).toLocaleString()}</span></div>
+                          <div style={styles.tableRowTotal}><span>🧾 Total</span><span>₹{calculateTotal(dmData.productQuant, dmData.productUnitPrice).toLocaleString()}</span></div>
                           <div style={styles.tableRow}><span>💳 Payment Mode</span><span>{dmData.paymentStatus ? dmData.toAccount : dmData.paySchedule === "POD" ? "Cash" : dmData.paySchedule === "PL" ? "Credit" : dmData.paySchedule}</span></div>
                         </div>
                       </div>
@@ -262,7 +303,7 @@ const PrintDM = forwardRef(({ dmNumber, isOpen = true, onClose }, ref) => {
                             />
                           </div>
                           <div style={styles.qrLabelLarge}>Lakshmee Intelligent Technologies</div>
-                          <div style={styles.qrAmountLarge}>Scan to pay ₹{(dmData.productQuant * dmData.productUnitPrice).toLocaleString()}</div>
+                          <div style={styles.qrAmountLarge}>Scan to pay ₹{calculateTotal(dmData.productQuant, dmData.productUnitPrice).toLocaleString()}</div>
                         </div>
                       </div>
                       <div style={styles.rightColumn}>
@@ -295,7 +336,7 @@ const PrintDM = forwardRef(({ dmNumber, isOpen = true, onClose }, ref) => {
                           <div style={styles.tableRow}><span>📦 Product</span><span>{dmData.productName}</span></div>
                           <div style={styles.tableRow}><span>🔢 Quantity</span><span>{dmData.productQuant}</span></div>
                           <div style={styles.tableRow}><span>💰 Unit Price</span><span>₹{dmData.productUnitPrice}</span></div>
-                          <div style={styles.tableRowTotal}><span>🧾 Total</span><span>₹{(dmData.productQuant * dmData.productUnitPrice).toLocaleString()}</span></div>
+                          <div style={styles.tableRowTotal}><span>🧾 Total</span><span>₹{calculateTotal(dmData.productQuant, dmData.productUnitPrice).toLocaleString()}</span></div>
                           <div style={styles.tableRow}><span>💳 Payment Mode</span><span>{dmData.paymentStatus ? dmData.toAccount : dmData.paySchedule === "POD" ? "Cash" : dmData.paySchedule === "PL" ? "Credit" : dmData.paySchedule}</span></div>
                         </div>
                       </div>

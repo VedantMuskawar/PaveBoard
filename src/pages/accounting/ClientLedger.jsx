@@ -51,12 +51,12 @@ function ClientLedger({ onBack }) {
   const [endDate, setEndDate] = useState("");
   // Expandable row state
   const [expandedRowId, setExpandedRowId] = useState(null);
+  const [readCount, setReadCount] = useState(0);
 
 
   // Check if organization is selected
   useEffect(() => {
     if (!selectedOrg) {
-      console.error("No organization selected");
       return;
     }
   }, [selectedOrg]);
@@ -73,11 +73,10 @@ function ClientLedger({ onBack }) {
         );
         const snapshot = await getDocs(q);
         const dms = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        console.log("📦 Delivery Memos:", dms);
+        setReadCount(prev => prev + snapshot.docs.length);
         setClientDMs(dms);
         setLoadingData(false);
       } catch (error) {
-        console.error("❌ Error fetching delivery memos:", error);
         setLoadingData(false);
       }
     };
@@ -98,11 +97,10 @@ function ClientLedger({ onBack }) {
 
         const snapshot = await getDocs(q);
         const txns = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        console.log("📄 Transactions:", txns);
+        setReadCount(prev => prev + snapshot.docs.length);
         setClientTransactions(txns);
         setLoadingData(false);
       } catch (error) {
-        console.error("❌ Error fetching transactions:", error);
         setLoadingData(false);
       }
     };
@@ -124,11 +122,10 @@ function ClientLedger({ onBack }) {
 
         const snapshot = await getDocs(q);
         const orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        console.log("🧾 Orders:", orders);
+        setReadCount(prev => prev + snapshot.docs.length);
         setClientOrders(orders);
         setLoadingData(false);
       } catch (error) {
-        console.error("❌ Error fetching orders:", error);
         setLoadingData(false);
       }
     };
@@ -159,10 +156,8 @@ function ClientLedger({ onBack }) {
           );
 
           const snapshot = await getDocs(q);
-          console.log("📡 Reading data from CLIENTS collection in Firestore...");
-          console.log(`📥 Fetched ${snapshot.docs.length} documents from Firestore.`);
           const results = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          console.log("🔍 Filtered Clients:", results);
+          setReadCount(prev => prev + snapshot.docs.length);
           setFilteredClients(results);
           // highlight animation for matched rows
           if (results.length > 0) {
@@ -171,7 +166,6 @@ function ClientLedger({ onBack }) {
           }
           setLoadingClients(false);
         } catch (error) {
-          console.error("❌ Error fetching clients:", error);
           setLoadingClients(false);
         }
       };
@@ -359,6 +353,7 @@ function ClientLedger({ onBack }) {
                     <div><strong>📞 Phone:</strong> {selectedClient.phoneNumber || "—"}</div>
                     <div><strong>📊 Balance:</strong> ₹{selectedClient.totalBalance?.toLocaleString() || "0"}</div>
                     <div><strong>🧾 Orders:</strong> {clientOrders.length} | <strong>💸 Transactions:</strong> {clientTransactions.length}</div>
+                    <div><strong>📊 Firestore Reads:</strong> {readCount}</div>
                   </Card>
                 </div>
                 {loadingData && (

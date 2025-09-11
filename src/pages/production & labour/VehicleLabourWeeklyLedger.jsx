@@ -1,22 +1,14 @@
 // Helper function to fetch cumulative wage for a driver-vehicle-date-org
 async function fetchDriverVehicleWage(driverID, vehicleID, date, orgID) {
-  console.log("[DEBUG] Running Firestore wage query for:", {
-    driverID,
-    vehicleID,
-    date,
-    orgID,
-  });
-  
   try {
     const wageQuery = query(
-      collection(db, "WAGE_ENTRIES"),
+      collection(db, "WAGES_ENTRIES"),
       where("driverID", "==", driverID),
       where("vehicleID", "==", vehicleID),
       where("orgID", "==", orgID),
       where("date", "==", date)
     );
     const snapshot = await getDocs(wageQuery);
-    console.log("[DEBUG] Fetched WAGE_ENTRIES docs:", snapshot.docs.map((doc) => doc.data()));
     let total = 0;
     snapshot.forEach((doc) => {
       const data = doc.data();
@@ -24,7 +16,7 @@ async function fetchDriverVehicleWage(driverID, vehicleID, date, orgID) {
     });
     return total;
   } catch (err) {
-    console.error("[DEBUG] Error fetching driver wage:", err);
+    console.error("Error fetching driver wage:", err);
     return 0;
   }
 }
@@ -92,61 +84,101 @@ const VLabourLedger = ({ onBack }) => {
     }
   };
 
+  // Database read counter
+  const [readCount, setReadCount] = useState(0);
+  
   // Check if organization is selected
   useEffect(() => {
-    if (!selectedOrg) {
-      console.error("No organization selected");
+    console.log("🏢 Organization check - orgID:", orgID);
+    if (!orgID) {
+      console.log("❌ No orgID available");
       return;
     }
-  }, [selectedOrg]);
+    console.log("✅ orgID available:", orgID);
+  }, [orgID]);
 
   useEffect(() => {
     const fetchLabours = async () => {
-      const laboursSnapshot = await getDocs(collection(db, "LABOURS"));
-      console.log("LABOURS read count:", laboursSnapshot.size);
-      const allLabours = laboursSnapshot.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .filter(
-          labour =>
-            Array.isArray(labour.tags) &&
-            (labour.tags.includes("Loader") || labour.tags.includes("Unloader"))
-        );
-
-      // Apply date filter to WAGE_ENTRIES
+      if (!orgID) {
+        console.log("❌ No orgID, returning early");
+        return;
+      }
+      
+      let totalReads = 0;
       const startTimestamp = Timestamp.fromDate(new Date(selectedDate));
       const endTimestamp = Timestamp.fromDate(new Date(endDate));
-      const wageQuery = query(
-        collection(db, "WAGE_ENTRIES"),
-        where("date", ">=", startTimestamp),
-        where("date", "<=", endTimestamp)
-      );
-      const wageSnapshot = await getDocs(wageQuery);
-      console.log("WAGE_ENTRIES read count (in fetchLabours):", wageSnapshot.size);
-      const paymentSnapshot = await getDocs(collection(db, "LABOUR_PAYMENTS"));
-      console.log("LABOUR_PAYMENTS read count (in fetchLabours):", paymentSnapshot.size);
+      
+      try {
+        // Fetch employees (migrated from LABOURS) with organization filter
+        const employeesQuery = query(
+          collection(db, "employees"),
+          where("orgID", "==", orgID),
+          where("employeeTags", "array-contains-any", ["loader", "unloader"]),
+          where("isActive", "==", true)
+        );
+        const employeesSnapshot = await getDocs(employeesQuery);
+        totalReads += employeesSnapshot.size;
+        
+        // Fetch wage entries for org (avoiding composite index)
+        const wageEntriesQuery = query(
+          collection(db, "WAGES_ENTRIES"),
+          where("orgID", "==", orgID)
+        );
+        const allWageEntriesSnap = await getDocs(wageEntriesQuery);
+        totalReads += allWageEntriesSnap.size;
+        
+        // Filter wage entries by date in JavaScript
+        const filteredWageEntries = allWageEntriesSnap.docs.filter(doc => {
+          const data = doc.data();
+          const entryDate = data.date;
+          if (!entryDate) return false;
+          
+          const entryDateObj = entryDate.toDate ? entryDate.toDate() : new Date(entryDate);
+          return entryDateObj >= new Date(selectedDate) && entryDateObj <= new Date(endDate);
+        });
+        
+        console.log(`💰 Filtered wage entries for date range: ${filteredWageEntries.length} out of ${allWageEntriesSnap.size}`);
+        
+        // Fetch labour payments
+        const paymentSnapshot = await getDocs(collection(db, "LABOUR_PAYMENTS"));
+        totalReads += paymentSnapshot.size;
+        
+        setReadCount(totalReads);
+        
+        // Process employees (migrated from LABOURS)
+        const allLabours = employeesSnapshot.docs.map(doc => ({
+          id: doc.id,
+          labourID: doc.data().labourID,
+          name: doc.data().name,
+          ...doc.data()
+        }));
+        
+        console.log(`👷 Found ${allLabours.length} loader/unloader employees`);
+        
+        // Use the stored currentBalance from employees collection as the source of truth
+        const laboursWithBalance = allLabours.map(labour => ({
+          ...labour,
+          balance: typeof labour.currentBalance === 'number' ? labour.currentBalance : 0,
+        }));
 
-      // Fetch all saved WAGE_ENTRIES for this period
-      const savedEntriesSnapshot = await getDocs(wageQuery);
-      const savedEntries = savedEntriesSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setSavedWageEntries(savedEntries);
-
-      // Use the stored currentBalance from LABOURS collection as the source of truth
-      const laboursWithBalance = allLabours.map(labour => ({
-        ...labour,
-        // Use the stored currentBalance from LABOURS collection as the source of truth
-        balance: typeof labour.currentBalance === 'number' ? labour.currentBalance : 0,
-      }));
-
-      setLabours(laboursWithBalance);
-      setWageEntries(wageSnapshot.docs.map(doc => doc.data()));
-      setLabourPayments(paymentSnapshot.docs.map(doc => doc.data()));
+        setLabours(laboursWithBalance);
+        setWageEntries(filteredWageEntries.map(doc => doc.data()));
+        setLabourPayments(paymentSnapshot.docs.map(doc => doc.data()));
+        
+        // Set saved wage entries
+        const savedEntries = filteredWageEntries.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setSavedWageEntries(savedEntries);
+        
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      }
     };
 
     fetchLabours();
-  }, []);
+  }, [selectedDate, endDate, orgID]);
 
   // Removed useEffects for fetching WAGE_ENTRIES and LABOUR_PAYMENTS
 
@@ -217,8 +249,20 @@ const VLabourLedger = ({ onBack }) => {
       <header className="apple-header">
         <div className="back-button" onClick={onBack || (() => window.history.back())}>←</div>
         <div>Vehicle Labour Ledger</div>
-        <div className={`role-badge ${isAdmin ? 'admin' : 'manager'}`}>
-          {isAdmin ? "👑 Admin" : "👔 Manager"}
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <div className={`role-badge ${isAdmin ? 'admin' : 'manager'}`}>
+            {isAdmin ? "👑 Admin" : "👔 Manager"}
+          </div>
+          <div style={{ 
+            fontSize: "0.8rem", 
+            color: "#9ba3ae",
+            padding: "2px 6px",
+            borderRadius: "4px",
+            background: "rgba(255,255,255,0.1)",
+            border: "1px solid rgba(255,255,255,0.2)"
+          }}>
+            📊 {readCount} reads
+          </div>
         </div>
       </header>
       {/* Main content container with consistent spacing */}

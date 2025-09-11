@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { cacheUtils } from '../utils/cacheManager';
+import cacheManager from '../utils/cacheManager';
 import { Card, Button, Badge } from './ui';
 
 const CacheStatus = ({ orgID }) => {
@@ -11,19 +11,19 @@ const CacheStatus = ({ orgID }) => {
   }, [orgID]);
 
   const updateCacheStats = () => {
-    const stats = cacheUtils.getCacheStats();
+    const stats = cacheManager.getStats();
     setCacheStats(stats);
   };
 
   const handleClearAllCache = () => {
-    cacheUtils.clearAllCache();
+    cacheManager.clearAll();
     updateCacheStats();
   };
 
   const handleCleanupExpired = () => {
-    const cleanedCount = cacheUtils.cleanupExpiredCache();
+    cacheManager.cleanupCache();
     updateCacheStats();
-    return cleanedCount;
+    return 0; // cleanupCache doesn't return count, but we can estimate
   };
 
   if (!cacheStats) return null;

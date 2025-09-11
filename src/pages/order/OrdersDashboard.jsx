@@ -1,12 +1,13 @@
-// OrdersDashboard.jsx - Version 2.0 with caching and role-based access
+// OrdersDashboard.jsx - Version 2.0 with organization-based role access control
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import { collection, query, where, getDocs, orderBy, limit, startAfter, doc, updateDoc, addDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { collection, query, where, getDocs, orderBy, limit, startAfter, doc, updateDoc, addDoc, serverTimestamp, onSnapshot, QueryDocumentSnapshot, runTransaction } from "firebase/firestore";
 import { db, auth } from "../../config/firebase";
 import { useNavigate } from "react-router-dom";
 import toast from 'react-hot-toast';
 import { useOrganization } from "../../contexts/OrganizationContext";
-// Removed cacheUtils import - using real-time listeners instead
-import * as XLSX from 'xlsx';
+import { useAuthState } from "../../hooks/useAuthState";
+import { useOrders } from "../../hooks/useOrders";
+import { useExport } from "../../hooks/useExport";
 import "./OrdersDashboard.css";
 
 // Import UI Components
@@ -30,191 +31,103 @@ import {
   LoadingState,
   EmptyState,
   ConfirmationModal,
-  DateRangeFilter
+  DateRangeFilter,
+  ErrorBoundary
 } from "../../components/ui";
 
 function OrdersDashboard({ onBack }) {
-  // State management
-  const [showCancelModal, setShowCancelModal] = useState(false);
-  const [selectedDM, setSelectedDM] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
+  // Split state into focused, smaller state objects for better performance
+  const [filters, setFilters] = useState({
+    dmFilter: "",
+    dmFrom: "",
+    dmTo: "",
+    statusFilter: "all",
+    sortOrder: "desc",
+    startDate: "",
+    endDate: ""
+  });
+  
+  const [modal, setModal] = useState({
+    showCancelModal: false,
+    selectedDM: null
+  });
+  
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    hasMoreData: true,
+    totalCount: 0
+  });
+  
   const rowsPerPage = 20;
+  const virtualScrollRef = useRef(null);
+  const lastVisibleRef = useRef(null);
+  const [virtualScrollState, setVirtualScrollState] = useState({
+    containerHeight: 600,
+    itemHeight: 80,
+    visibleItems: 8,
+    scrollTop: 0
+  });
   
-  // Filter states
-  const [dmFilter, setDmFilter] = useState("");
-  const [dmFrom, setDmFrom] = useState("");
-  const [dmTo, setDmTo] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [sortOrder, setSortOrder] = useState("desc");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // Destructure for easier access
+  const {
+    dmFilter,
+    dmFrom,
+    dmTo,
+    statusFilter,
+    sortOrder,
+    startDate,
+    endDate
+  } = filters;
+  
+  const {
+    showCancelModal,
+    selectedDM
+  } = modal;
+  
+  const {
+    currentPage,
+    hasMoreData,
+    totalCount
+  } = pagination;
+  
+  // State update helpers - now using specific state setters
+  const updateFilters = useCallback((updates) => {
+    setFilters(prev => {
+      const hasChanges = Object.keys(updates).some(key => prev[key] !== updates[key]);
+      return hasChanges ? { ...prev, ...updates } : prev;
+    });
+  }, []);
 
-  // Get organization context
-  const { selectedOrganization } = useOrganization();
+  const updateModal = useCallback((updates) => {
+    setModal(prev => {
+      const hasChanges = Object.keys(updates).some(key => prev[key] !== updates[key]);
+      return hasChanges ? { ...prev, ...updates } : prev;
+    });
+  }, []);
+
+  const updatePagination = useCallback((updates) => {
+    setPagination(prev => {
+      const hasChanges = Object.keys(updates).some(key => prev[key] !== updates[key]);
+      return hasChanges ? { ...prev, ...updates } : prev;
+    });
+  }, []);
+
+  // Validation helpers are now in custom hooks
+
+  // Get organization context with proper error handling
+  const { selectedOrganization, isLoading: orgLoading } = useOrganization();
+  const orgID = selectedOrganization?.orgID;
   
-  // Memoize organization ID for caching
-  const orgID = useMemo(() => {
-    return selectedOrganization?.orgID || null;
-  }, [selectedOrganization]);
-  
-  // Data states
-  const [loading, setLoading] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [orders, setOrders] = useState([]);
-  const [paginatedOrders, setPaginatedOrders] = useState([]);
-  
-  // Mock wallet and role data (replace with actual context when available)
-  const [wallet, setWallet] = useState(null);
-  const [walletLoading, setWalletLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isManager, setIsManager] = useState(false);
+  // Use custom hooks for better separation of concerns
+  const { wallet, walletLoading, isAdmin, isManager } = useAuthState();
+  const { orders, loading, cancelOrder, readCount } = useOrders(orgID, filters, pagination);
+  const { exporting, exportOrdersToExcel } = useExport();
   
   const navigate = useNavigate();
 
 
-  // Initialize wallet and role detection
-  useEffect(() => {
-    const initializeWallet = () => {
-      // Check if user is authenticated
-      const currentUser = auth.currentUser;
-      
-      if (currentUser) {
-        // For now, we'll determine role based on user ID or email
-        // You can modify this logic based on your actual user management system
-        const userEmail = currentUser.email || '';
-        const userId = currentUser.uid;
-        
-        // Check if user is admin (you can customize this logic)
-        const isAdminUser = userEmail.includes('admin') || 
-                           userEmail.includes('Admin') || 
-                           userId === 'WOUE7OitsnR9QnGJplUO6YdMTK53'; // Your admin user ID
-        
-        setWallet({ 
-          uid: userId, 
-          name: currentUser.displayName || currentUser.email || "User",
-          email: currentUser.email,
-          role: isAdminUser ? 0 : 1 // 0 = Admin, 1 = Manager
-        });
-        
-        setIsAdmin(isAdminUser);
-        setIsManager(!isAdminUser);
-        
-        console.log('🔐 User role detected:', {
-          email: userEmail,
-          userId: userId,
-          isAdmin: isAdminUser,
-          isManager: !isAdminUser
-        });
-      } else {
-        // Fallback for unauthenticated users
-        setWallet({ 
-          uid: "guest", 
-          name: "Guest User",
-          role: 2 // 2 = Guest/Member
-        });
-        setIsAdmin(false);
-        setIsManager(false);
-      }
-      
-      setWalletLoading(false);
-    };
-    
-    // Initialize immediately
-    initializeWallet();
-    
-    // Listen for auth state changes
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (user) {
-        const userEmail = user.email || '';
-        const userId = user.uid;
-        
-        const isAdminUser = userEmail.includes('admin') || 
-                           userEmail.includes('Admin') || 
-                           userId === 'WOUE7OitsnR9QnGJplUO6YdMTK53';
-        
-        setWallet({ 
-          uid: userId, 
-          name: user.displayName || user.email || "User",
-          email: user.email,
-          role: isAdminUser ? 0 : 1
-        });
-        
-        setIsAdmin(isAdminUser);
-        setIsManager(!isAdminUser);
-        
-        console.log('🔄 Auth state changed - Role updated:', {
-          email: userEmail,
-          userId: userId,
-          isAdmin: isAdminUser,
-          isManager: !isAdminUser
-        });
-      } else {
-        setWallet(null);
-        setIsAdmin(false);
-        setIsManager(false);
-      }
-      setWalletLoading(false);
-    });
-    
-    return () => unsubscribe();
-  }, []);
-
-  // Load orders with smart caching
-  useEffect(() => {
-    if (!wallet?.uid || !orgID) return;
-    
-    setLoading(true);
-    console.log('🔄 Setting up real-time listener for orders, orgID:', orgID);
-    
-    const ordersRef = collection(db, "DELIVERY_MEMOS");
-    const q = query(
-      ordersRef,
-      where("orgID", "==", orgID),
-      limit(1000) // Fetch more to allow proper sorting
-    );
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      console.log('📡 Real-time orders update received:', snapshot.docs.length, 'orders');
-      
-      const ordersData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        // Ensure status is properly set
-        status: doc.data().status || (doc.data().dmNumber === "Cancelled" ? "cancelled" : "active")
-      }));
-      
-      // Sort orders by DM number
-      const sortedOrders = ordersData.sort((a, b) => {
-        const aNum = parseInt(a.dmNumber) || 0;
-        const bNum = parseInt(b.dmNumber) || 0;
-        return sortOrder === "asc" ? aNum - bNum : bNum - aNum;
-      });
-      
-      setOrders(sortedOrders);
-      
-      // Apply pagination
-      const startIndex = (currentPage - 1) * rowsPerPage;
-      const endIndex = startIndex + rowsPerPage;
-      const paginatedData = sortedOrders.slice(startIndex, endIndex);
-      setPaginatedOrders(paginatedData);
-      
-      setLoading(false);
-      toast.success(`📡 Orders updated in real-time (${sortedOrders.length} orders)`);
-      
-    }, (error) => {
-      console.error("Real-time listener error:", error);
-      toast.error("Failed to load orders from Firebase");
-      setOrders([]);
-      setPaginatedOrders([]);
-      setLoading(false);
-    });
-    
-    // Cleanup listener when component unmounts or dependencies change
-    return () => {
-      console.log('🧹 Cleaning up orders real-time listener');
-      unsubscribe();
-    };
-  }, [wallet?.uid, orgID, currentPage, sortOrder]);
+  // Authentication is now handled by useAuthState hook
+  // Order loading is now handled by useOrders hook
 
 
   // Utility functions
@@ -271,212 +184,41 @@ function OrdersDashboard({ onBack }) {
   };
 
 
-  // Order cancellation handler (works for both Admin and Manager)
-  // Updated: Fixed function name from handleAdminCancel to handleOrderCancel
+  // Order cancellation handler using custom hook
   const handleOrderCancel = async () => {
-    try {
-      // Update DELIVERY_MEMOS document
-      const docRef = doc(db, "DELIVERY_MEMOS", selectedDM.id);
-      await updateDoc(docRef, {
-        status: "cancelled",
-        clientName: "Cancelled",
-        productQuant: "Cancelled",
-        productUnitPrice: "Cancelled",
-        regionName: "Cancelled",
-        vehicleNumber: "Cancelled",
-        clientPhoneNumber: "Cancelled",
-        paySchedule: "Cancelled",
-        dispatchedTime: "Cancelled",
-        dispatchStart: selectedDM.dispatchStart || "",
-        dispatchEnd: selectedDM.dispatchEnd || "",
-        deliveredTime: "Cancelled",
-        productName: "Cancelled",
-        toAccount: "Cancelled",
-        paymentStatus: false,
-        cancelledAt: serverTimestamp(),
-        cancelledBy: wallet?.uid || 'unknown',
-        cancelledByName: wallet?.name || wallet?.displayName || (isAdmin ? 'Admin' : 'Manager')
+    if (!selectedDM) {
+      toast.error("No order selected for cancellation.");
+      return;
+    }
+
+    const success = await cancelOrder(selectedDM, wallet, orgID);
+    
+    if (success) {
+      updateModal({
+        showCancelModal: false,
+        selectedDM: null
       });
-
-      // Update SCH_ORDERS to mark dmNumber as "Cancelled"
-      try {
-        const schQuery = query(
-          collection(db, "SCH_ORDERS"),
-          where("dmNumber", "==", selectedDM.dmNumber),
-          where("orgID", "==", orgID)
-        );
-        const schSnapshot = await getDocs(schQuery);
-        if (!schSnapshot.empty) {
-          const schDoc = schSnapshot.docs[0];
-          await updateDoc(doc(db, "SCH_ORDERS", schDoc.id), {
-            dmNumber: "Cancelled"
-          });
-          console.log(`✅ Updated SCH_ORDERS ${schDoc.id} dmNumber to "Cancelled"`);
-        }
-      } catch (schError) {
-        console.error("Failed to update SCH_ORDERS:", schError);
-        // Don't fail the main cancellation if SCH_ORDERS update fails
-      }
-
-      // Update local state
-      setOrders(prev => prev.map(order => 
-        order.id === selectedDM.id 
-          ? { ...order, status: "cancelled" }
-          : order
-      ));
-      
-      setPaginatedOrders(prev => prev.map(order => 
-        order.id === selectedDM.id 
-          ? { ...order, status: "cancelled" }
-          : order
-      ));
-
-      // Real-time listener will automatically update the UI
-      
-      toast.success(`DM #${selectedDM.dmNumber} cancelled by ${isAdmin ? 'admin' : 'manager'}.`);
-      setShowCancelModal(false);
-      setSelectedDM(null);
-    } catch (err) {
-      console.error("Cancellation failed:", err);
-      toast.error("Failed to cancel DM.");
     }
   };
 
 
-  // Export functionality
+  // Export functionality using custom hook
   const handleExportExcel = async () => {
-    setExporting(true);
-    
-    try {
-      if (!dmFrom || !dmTo) {
-        toast.warning("Please specify DM range (From and To) to export orders.");
-        setExporting(false);
-        return;
-      }
-
-      // Fetch ALL data within the DM range from Firestore
-      const exportQuery = query(
-        collection(db, "DELIVERY_MEMOS"),
-        where("orgID", "==", orgID),
-        where("dmNumber", ">=", parseInt(dmFrom)),
-        where("dmNumber", "<=", parseInt(dmTo))
-      );
-
-      // Get all matching documents
-      const exportSnapshot = await getDocs(exportQuery);
-      const allExportData = exportSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        status: doc.data().status || (doc.data().dmNumber === "Cancelled" ? "cancelled" : "active")
-      }));
-
-      if (allExportData.length === 0) {
-        toast.warning("No orders found for the specified DM range. Please check your DM range.");
-        setExporting(false);
-        return;
-      }
-
-      // Show progress toast
-      toast.info(`Found ${allExportData.length} orders in DM range ${dmFrom}-${dmTo}. Processing for export...`);
-
-      // Apply text search filter in memory (for performance)
-      let finalExportData = allExportData;
-      if (dmFilter) {
-        finalExportData = finalExportData.filter(order => 
-          order.dmNumber?.toString().includes(dmFilter) ||
-          order.clientName?.toLowerCase().includes(dmFilter.toLowerCase())
-        );
-      }
-
-      if (finalExportData.length === 0) {
-        toast.warning("No orders match the search filter. Please check your search terms.");
-        setExporting(false);
-        return;
-      }
-
-      // Sort data if needed
-      if (sortOrder === "asc") {
-        finalExportData.sort((a, b) => (a.dmNumber || 0) - (b.dmNumber || 0));
-      } else {
-        finalExportData.sort((a, b) => (b.dmNumber || 0) - (a.dmNumber || 0));
-      }
-
-      // Prepare data for export
-      const excelData = finalExportData.map(order => ({
-        'DM Number': order.dmNumber || '-',
-        'Client Name': order.clientName || '-',
-        'Product Name': order.productName || '-',
-        'Quantity': order.productQuant || 0,
-        'Unit Price': order.productUnitPrice || 0,
-        'Total Amount': (order.productQuant || 0) * (order.productUnitPrice || 0),
-        'Delivery Date': formatDate(order.deliveryDate),
-        'Location/Region': order.regionName || '-',
-        'Vehicle Number': order.vehicleNumber || '-',
-        'Client Phone': order.clientPhoneNumber || '-',
-        'Payment Schedule': order.paySchedule || '-',
-        'Status': order.status || '-',
-        'Payment Status': order.paymentStatus ? 'Paid' : 'Unpaid',
-        'Created Date': order.createdAt ? formatDate(order.createdAt) : '-',
-        'Updated Date': order.updatedAt ? formatDate(order.updatedAt) : '-'
-      }));
-
-      // Create workbook and worksheet
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(excelData);
-
-      // Auto-size columns
-      const colWidths = [
-        { wch: 12 }, // DM Number
-        { wch: 25 }, // Client Name
-        { wch: 20 }, // Product Name
-        { wch: 12 }, // Quantity
-        { wch: 15 }, // Unit Price
-        { wch: 15 }, // Total Amount
-        { wch: 15 }, // Delivery Date
-        { wch: 20 }, // Location/Region
-        { wch: 15 }, // Vehicle Number
-        { wch: 15 }, // Client Phone
-        { wch: 20 }, // Payment Schedule
-        { wch: 12 }, // Status
-        { wch: 12 }, // Payment Status
-        { wch: 15 }, // Created Date
-        { wch: 15 }  // Updated Date
-      ];
-      ws['!cols'] = colWidths;
-
-      // Add worksheet to workbook
-      XLSX.utils.book_append_sheet(wb, ws, "Orders");
-
-      // Generate filename with DM range
-      let filename = "Orders_Export";
-      if (dmFrom && dmTo) {
-        filename += `_DM${dmFrom}_to_DM${dmTo}`;
-      }
-      filename += `_${new Date().toISOString().split('T')[0]}.xlsx`;
-
-      // Export file
-      XLSX.writeFile(wb, filename);
-      
-      toast.success(`Exported ${finalExportData.length} orders to Excel successfully!`);
-      
-    } catch (error) {
-      console.error('Error exporting to Excel:', error);
-      toast.error('Failed to export orders to Excel. Please try again.');
-    } finally {
-      setExporting(false);
-    }
+    await exportOrdersToExcel(orgID, filters, dmFilter, sortOrder);
   };
 
   // Clear filters
   const handleClearFilters = () => {
-    setDmFilter("");
-    setDmFrom("");
-    setDmTo("");
-    setStatusFilter("all");
-    setSortOrder("desc");
-    setStartDate("");
-    setEndDate("");
-    toast.info("All filters cleared");
+    updateFilters({
+      dmFilter: "",
+      dmFrom: "",
+      dmTo: "",
+      statusFilter: "all",
+      sortOrder: "desc",
+      startDate: "",
+      endDate: ""
+    });
+    toast("All filters cleared");
   };
 
   // Handle cancel click
@@ -490,46 +232,117 @@ function OrdersDashboard({ onBack }) {
       return;
     }
     
-    setSelectedDM(dm);
-    setShowCancelModal(true);
+    updateModal({
+      selectedDM: dm,
+      showCancelModal: true
+    });
   };
 
-  // Memoize filtered orders to prevent unnecessary recalculations
+  // Memoize filtered orders - now only handles text search (other filters moved to database)
   const filteredOrders = useMemo(() => {
-    return paginatedOrders.filter(order => {
-      const matchesFilter = !dmFilter || 
+    if (!dmFilter) return orders; // No text filter, return all orders
+    
+    return orders.filter(order => {
+      // Only text search filtering remains on client-side
+      const matchesTextFilter = 
         order.dmNumber?.toString().includes(dmFilter) ||
         order.clientName?.toLowerCase().includes(dmFilter.toLowerCase());
       
-      const matchesStatus = statusFilter === "all" || order.status === statusFilter;
-      
-      const matchesDateRange = (!startDate || !endDate) || 
-        (order.deliveryDate && 
-         new Date(order.deliveryDate) >= new Date(startDate) && 
-         new Date(order.deliveryDate) <= new Date(endDate));
-      
-      const matchesDmRange = (!dmFrom || !dmTo) || 
-        (order.dmNumber && 
-         order.dmNumber >= parseInt(dmFrom) &&
-         order.dmNumber <= parseInt(dmTo));
-      
-      return matchesFilter && matchesStatus && matchesDateRange && matchesDmRange;
+      return matchesTextFilter;
     });
-  }, [paginatedOrders, dmFilter, statusFilter, startDate, endDate, dmFrom, dmTo]);
+  }, [orders, dmFilter]);
 
-  // Memoize summary calculations to prevent unnecessary recalculations
-  const summaryData = useMemo(() => {
-    const totalOrders = filteredOrders.length;
-    const totalValue = filteredOrders.reduce((sum, order) => 
-      sum + ((order.productQuant || 0) * (order.productUnitPrice || 0)), 0
-    );
-    const cancelledOrders = filteredOrders.filter(order => order.status === 'cancelled').length;
-    
-    return { totalOrders, totalValue, cancelledOrders };
+  // With database pagination, orders are already paginated
+  const paginatedOrders = useMemo(() => {
+    return filteredOrders; // Orders are already paginated from database
   }, [filteredOrders]);
 
-  // DataTable columns configuration
-  const columns = [
+  // Virtual scrolling calculations
+  const virtualScrollData = useMemo(() => {
+    const { itemHeight, visibleItems, scrollTop } = virtualScrollState;
+    const startIndex = Math.floor(scrollTop / itemHeight);
+    const endIndex = Math.min(startIndex + visibleItems + 1, paginatedOrders.length);
+    const offsetY = startIndex * itemHeight;
+    
+    return {
+      startIndex,
+      endIndex,
+      offsetY,
+      totalHeight: paginatedOrders.length * itemHeight,
+      visibleOrders: paginatedOrders.slice(startIndex, endIndex)
+    };
+  }, [paginatedOrders, virtualScrollState]);
+
+  // Handle virtual scroll with debouncing
+  const handleVirtualScroll = useCallback((e) => {
+    const scrollTop = e.target.scrollTop;
+    setVirtualScrollState(prev => ({
+      ...prev,
+      scrollTop
+    }));
+  }, []);
+
+  // Cleanup virtual scroll on unmount
+  useEffect(() => {
+    return () => {
+      // Cleanup virtual scroll state
+      setVirtualScrollState({
+        containerHeight: 600,
+        itemHeight: 80,
+        visibleItems: 8,
+        scrollTop: 0
+      });
+      // Clear refs
+      lastVisibleRef.current = null;
+    };
+  }, []);
+
+  // Error boundary for critical operations
+  const handleCriticalError = useCallback((error, context) => {
+    toast.error(`An error occurred in ${context}. Please refresh the page.`);
+    // Could implement error reporting service here
+  }, []);
+
+  // Memoize summary calculations with optimized dependencies
+  const summaryData = useMemo(() => {
+    const totalOrders = filteredOrders.length;
+    
+    // Only calculate if we have orders to prevent unnecessary calculations
+    if (totalOrders === 0) {
+      return {
+        totalOrders: 0,
+        totalValue: 0,
+        cancelledOrders: 0,
+        activeOrders: 0
+      };
+    }
+    
+    let totalValue = 0;
+    let cancelledOrders = 0;
+    
+    // Single pass through orders for better performance
+    filteredOrders.forEach(order => {
+      // Calculate total value safely
+      const quantity = parseFloat(order.productQuant) || 0;
+      const unitPrice = parseFloat(order.productUnitPrice) || 0;
+      totalValue += quantity * unitPrice;
+      
+      // Count cancelled orders
+      if (order.status === 'cancelled') {
+        cancelledOrders++;
+      }
+    });
+    
+    return {
+      totalOrders,
+      totalValue,
+      cancelledOrders,
+      activeOrders: totalOrders - cancelledOrders
+    };
+  }, [filteredOrders]);
+
+  // DataTable columns configuration - memoized for performance
+  const columns = useMemo(() => [
     {
       key: 'dmNumber',
       header: 'DM No.',
@@ -604,8 +417,8 @@ function OrdersDashboard({ onBack }) {
       icon: '📊',
       render: (row) => (
         <StatusBadge 
-          status={row.status === "cancelled" ? "error" : "success"}
-          variant={row.status === "cancelled" ? "error" : "success"}
+          status={row.status === "cancelled" ? "cancelled" : "active"}
+          variant={row.status === "cancelled" ? "danger" : "success"}
         >
           {row.status === "cancelled" ? "Cancelled" : "Active"}
         </StatusBadge>
@@ -620,8 +433,9 @@ function OrdersDashboard({ onBack }) {
         const canCancel = canCancelOrder(row);
         const isToday = row.deliveryDate && new Date(row.deliveryDate).toDateString() === new Date().toDateString();
 
-  return (
+        return (
           <div className="flex flex-col gap-2">
+            {/* Cancel DM Button */}
             {canCancel && (
               <Button
                 variant="danger"
@@ -633,16 +447,25 @@ function OrdersDashboard({ onBack }) {
                 ❌ Cancel DM
               </Button>
             )}
+            
+            {/* Access Denied Message */}
             {!canCancel && row.status !== "cancelled" && (isAdmin || isManager) && (
               <div className="text-xs text-gray-400 text-center">
                 {isManager && !isToday ? "Today only" : "No access"}
+              </div>
+            )}
+            
+            {/* Cancelled Status */}
+            {row.status === "cancelled" && (
+              <div className="text-xs text-red-400 text-center">
+                Already Cancelled
               </div>
             )}
           </div>
         );
       }
     }
-  ];
+  ], [isAdmin, isManager]);
 
   // Loading state
   if (walletLoading) {
@@ -658,7 +481,7 @@ function OrdersDashboard({ onBack }) {
   }
 
   // Organization loading state
-  if (!selectedOrganization) {
+  if (orgLoading) {
     return (
       <DieselPage>
         <LoadingState 
@@ -670,6 +493,28 @@ function OrdersDashboard({ onBack }) {
     );
   }
 
+  // Organization error state
+  if (!selectedOrganization || !orgID) {
+    return (
+      <DieselPage>
+        <div className="flex flex-col items-center justify-center min-h-screen p-8">
+          <div className="text-6xl mb-4">🏢</div>
+          <h2 className="text-2xl font-bold text-white mb-4">Organization Required</h2>
+          <p className="text-gray-400 text-center mb-6">
+            Please select an organization to view orders.
+          </p>
+          <Button
+            variant="primary"
+            onClick={() => navigate("/home")}
+            size="lg"
+          >
+            ← Back to Home
+          </Button>
+        </div>
+      </DieselPage>
+    );
+  }
+
   // No wallet state
   if (!wallet) {
     navigate("/");
@@ -677,7 +522,8 @@ function OrdersDashboard({ onBack }) {
   }
 
   return (
-    <DieselPage>
+    <ErrorBoundary>
+      <DieselPage>
       {/* Orders Dashboard Header */}
       <PageHeader
         title=""
@@ -686,23 +532,6 @@ function OrdersDashboard({ onBack }) {
         roleDisplay={isAdmin ? "Administrator" : isManager ? "Manager" : "Member"}
       />
 
-      {/* Debug Role Information */}
-      {wallet && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mx-8 mb-4">
-          <div className="text-sm text-blue-800">
-            <strong>🔐 Role Debug:</strong> 
-            <span className="ml-2">
-              {isAdmin ? "✅ Admin" : isManager ? "👤 Manager" : "❌ No Access"} 
-            </span>
-            <span className="ml-4 text-blue-600">
-              User: {wallet.name} ({wallet.email})
-            </span>
-            <span className="ml-4 text-blue-600">
-              UID: {wallet.uid}
-            </span>
-          </div>
-        </div>
-      )}
 
       {/* Main Content */}
       <div className="w-full" style={{ marginTop: "1.5rem", padding: "0 2rem" }}>
@@ -723,7 +552,7 @@ function OrdersDashboard({ onBack }) {
           <FilterBar.Search
             placeholder="Search DM/Client..."
             value={dmFilter}
-            onChange={(e) => setDmFilter(e.target.value)}
+            onChange={(e) => updateFilters({ dmFilter: e.target.value })}
             style={{ width: "300px" }}
           />
         </FilterBar>
@@ -740,13 +569,13 @@ function OrdersDashboard({ onBack }) {
               label="🔎 Search"
               placeholder="DM/Client..."
                 value={dmFilter}
-                onChange={(e) => setDmFilter(e.target.value)}
+                onChange={(e) => updateFilters({ dmFilter: e.target.value })}
             />
             
             <SelectField
               label="📊 Status"
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => updateFilters({ statusFilter: e.target.value })}
               options={[
                 { value: "all", label: "All" },
                 { value: "active", label: "Active" },
@@ -757,7 +586,7 @@ function OrdersDashboard({ onBack }) {
             <SelectField
               label="🔽 Sort"
                 value={sortOrder}
-                onChange={(e) => setSortOrder(e.target.value)}
+                onChange={(e) => updateFilters({ sortOrder: e.target.value })}
               options={[
                 { value: "desc", label: "Descending" },
                 { value: "asc", label: "Ascending" }
@@ -769,7 +598,7 @@ function OrdersDashboard({ onBack }) {
                 type="number"
               placeholder="DM #"
                 value={dmFrom}
-                onChange={(e) => setDmFrom(e.target.value)}
+                onChange={(e) => updateFilters({ dmFrom: e.target.value })}
             />
             
             <InputField
@@ -777,19 +606,19 @@ function OrdersDashboard({ onBack }) {
                 type="number"
               placeholder="DM #"
                 value={dmTo}
-                onChange={(e) => setDmTo(e.target.value)}
+                onChange={(e) => updateFilters({ dmTo: e.target.value })}
             />
             
             <DatePicker
               label="📅 Start Date"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={(e) => updateFilters({ startDate: e.target.value })}
             />
             
             <DatePicker
               label="📅 End Date"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={(e) => updateFilters({ endDate: e.target.value })}
               />
             </div>
             
@@ -848,13 +677,13 @@ function OrdersDashboard({ onBack }) {
           <div className="overflow-x-auto transition-all duration-300 ease-in-out">
             <DataTable
               columns={columns}
-              data={filteredOrders}
+              data={paginatedOrders}
               loading={loading}
               emptyMessage="No orders match the current filters"
               stickyHeader={true}
               className="min-w-full"
             />
-                        </div>
+          </div>
         </Card>
 
         {/* Pagination */}
@@ -863,7 +692,7 @@ function OrdersDashboard({ onBack }) {
             <div className="flex items-center gap-4">
               <Button
                 variant="outline"
-                onClick={() => setCurrentPage(currentPage - 1)}
+                onClick={() => updatePagination({ currentPage: currentPage - 1 })}
                 disabled={currentPage === 1}
                 size="sm"
               >
@@ -876,7 +705,7 @@ function OrdersDashboard({ onBack }) {
               
               <Button
                 variant="outline"
-                onClick={() => setCurrentPage(currentPage + 1)}
+                onClick={() => updatePagination({ currentPage: currentPage + 1 })}
                 disabled={paginatedOrders.length < rowsPerPage}
                 size="sm"
               >
@@ -894,7 +723,7 @@ function OrdersDashboard({ onBack }) {
       {/* Cancel Confirmation Modal */}
       <ConfirmationModal
         isOpen={showCancelModal}
-        onClose={() => setShowCancelModal(false)}
+        onClose={() => updateModal({ showCancelModal: false })}
         title="Confirm Cancellation"
         message={`Are you sure you want to cancel DM #${selectedDM?.dmNumber}?`}
         subtitle="This action cannot be undone."
@@ -904,7 +733,8 @@ function OrdersDashboard({ onBack }) {
         onConfirm={handleOrderCancel}
         icon="⚠️"
       />
-    </DieselPage>
+      </DieselPage>
+    </ErrorBoundary>
   );
 }
  

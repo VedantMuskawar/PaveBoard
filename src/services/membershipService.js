@@ -24,49 +24,36 @@ const USERS_COLLECTION = 'USERS';
  */
 export const verifyMembership = async (phoneNumber) => {
   try {
-    console.log('Verifying membership for:', phoneNumber);
-    
     // Try different collection names
     const collectionNames = [MEMBERS_COLLECTION, MEMBERS_COLLECTION_ALT, MEMBERS_COLLECTION_ALT2];
     
     for (const collectionName of collectionNames) {
       try {
-        console.log('Trying collection:', collectionName);
-        
         const membersRef = collection(db, collectionName);
         const q = query(membersRef, where('phoneNumber', '==', phoneNumber));
         
-        console.log('Executing query...');
         const querySnapshot = await getDocs(q);
-        
-        console.log('Query result - empty:', querySnapshot.empty);
-        console.log('Query result - size:', querySnapshot.size);
         
         if (!querySnapshot.empty) {
           // Get the first matching member
           const memberDoc = querySnapshot.docs[0];
           const memberData = memberDoc.data();
           
-          console.log('Member found in collection:', collectionName, memberData);
           return {
             id: memberDoc.id,
             ...memberData
           };
         }
       } catch (collectionError) {
-        console.log('Error with collection:', collectionName, collectionError);
         continue;
       }
     }
     
     // If we get here, no member was found in any collection
-    console.log('No member found for phone number:', phoneNumber, 'in any collection');
-    
-    // Let's try to get all documents from the first collection to debug
+    // Try to get all documents from the first collection to search manually
     try {
       const membersRef = collection(db, MEMBERS_COLLECTION);
       const allDocs = await getDocs(membersRef);
-      console.log('Total documents in collection:', allDocs.size);
       
       // Search manually through all documents
       let foundDoc = null;
@@ -82,40 +69,22 @@ export const verifyMembership = async (phoneNumber) => {
             name: data.member.name,
             phoneNumber: data.member.phoneNumber
           };
-          console.log('Found document with nested member structure:', foundDoc);
         }
         // Also check for direct phoneNumber field
         else if (data.phoneNumber === phoneNumber) {
           foundDoc = { id: doc.id, ...data };
-          console.log('Found document with direct phoneNumber field:', foundDoc);
         }
       });
       
       if (foundDoc) {
-        console.log('Returning manually found document');
         return foundDoc;
       }
-      
-      // Log first few documents to see the structure
-      allDocs.forEach((doc, index) => {
-        if (index < 3) {
-          const data = doc.data();
-          console.log(`Document ${index}:`, {
-            id: doc.id,
-            phoneNumber: data.phoneNumber,
-            memberPhoneNumber: data.member?.phoneNumber,
-            name: data.name,
-            memberName: data.member?.name
-          });
-        }
-      });
     } catch (debugError) {
-      console.log('Debug query failed:', debugError);
+      // Silent fail for debug query
     }
     
     return null;
   } catch (error) {
-    console.error('Error verifying membership:', error);
     throw new Error('Failed to verify membership');
   }
 };
@@ -144,14 +113,12 @@ export const getMemberByUserID = async (userID) => {
           };
         }
       } catch (collectionError) {
-        console.log('Error with collection:', collectionName, collectionError);
         continue;
       }
     }
     
     return null;
   } catch (error) {
-    console.error('Error getting member by user ID:', error);
     throw new Error('Failed to get member details');
   }
 };
@@ -186,7 +153,6 @@ export const createOrUpdateUser = async (userData, memberData) => {
     if (userSnapshot.empty) {
       // Create new user record
       const docRef = await addDoc(usersRef, userRecord);
-      console.log('User created with ID:', docRef.id);
       return docRef.id;
     } else {
       // Update existing user record
@@ -196,11 +162,9 @@ export const createOrUpdateUser = async (userData, memberData) => {
         createdAt: userDoc.data().createdAt, // Preserve original creation time
         updatedAt: serverTimestamp()
       });
-      console.log('User updated with ID:', userDoc.id);
       return userDoc.id;
     }
   } catch (error) {
-    console.error('Error creating/updating user:', error);
     throw new Error('Failed to save user data');
   }
 };
@@ -226,7 +190,6 @@ export const getUserRecord = async (uid) => {
       ...userDoc.data()
     };
   } catch (error) {
-    console.error('Error getting user record:', error);
     throw new Error('Failed to get user data');
   }
 };

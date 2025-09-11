@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   collection,
   query,
@@ -57,6 +57,9 @@ const ProcurementEntry = ({ onBack }) => {
   const [loading, setLoading] = useState(true);
   const [loadingVendors, setLoadingVendors] = useState(true);
   const [loadingEntries, setLoadingEntries] = useState(true);
+  
+  // Performance tracking
+  const [readCount, setReadCount] = useState(0);
 
   const [isEditing, setIsEditing] = useState(false);
   
@@ -99,7 +102,6 @@ const ProcurementEntry = ({ onBack }) => {
   // Check if organization is selected
   useEffect(() => {
     if (!selectedOrg) {
-      console.error("No organization selected");
       return;
     }
   }, [selectedOrg]);
@@ -134,14 +136,13 @@ const ProcurementEntry = ({ onBack }) => {
       
       const unsubscribe = onSnapshot(q, (snap) => {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        console.log("🏢 Fetched vendors:", rows);
         setVendors(rows);
         setLoadingVendors(false);
+        setReadCount(prev => prev + 1);
       });
       
       return unsubscribe;
     } catch (error) {
-      console.error("Error fetching vendors:", error);
       toast.error("Failed to fetch vendors");
       setLoadingVendors(false);
     }
@@ -160,49 +161,33 @@ const ProcurementEntry = ({ onBack }) => {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setProcurementEntries(rows);
         setLoadingEntries(false);
+        setReadCount(prev => prev + 1);
       });
       
       return unsubscribe;
     } catch (error) {
-      console.error("Error fetching procurement entries:", error);
       toast.error("Failed to fetch procurement entries");
       setLoadingEntries(false);
     }
   };
 
   // Handle add/edit procurement
-  const handleSubmitProcurement = async (e) => {
+  const handleSubmitProcurement = useCallback(async (e) => {
     e.preventDefault();
-    console.log("🚀 Form submission started");
-    console.log("📋 Form data:", { selectedVendor, itemName, rate, date, category, quantity, totalAmount });
     
     try {
       if (!selectedVendor || !itemName || !rate || !date) {
-        console.log("❌ Validation failed - missing required fields");
-        console.log("❌ Validation details:", {
-          selectedVendor: !!selectedVendor,
-          itemName: !!itemName,
-          rate: !!rate,
-          date: !!date
-        });
         toast.error("Please fill all required fields");
         return;
       }
 
       if (!quantity) {
-        console.log("❌ Validation failed - quantity required");
         toast.error("Quantity is required");
         return;
       }
 
-      console.log("🔍 Looking for vendor with ID:", selectedVendor);
-      console.log("🔍 Available vendors:", vendors.map(v => ({ id: v.id, vendorID: v.vendorID, name: v.name, type: v.type })));
       const selectedVendorData = vendors.find(v => v.id === selectedVendor || v.vendorID === selectedVendor);
       if (!selectedVendorData) {
-        console.log("❌ Validation failed - selected vendor not found");
-        console.log("❌ Selected vendor value:", selectedVendor);
-        console.log("❌ Available vendor IDs:", vendors.map(v => v.vendorID));
-        console.log("❌ Available document IDs:", vendors.map(v => v.id));
         toast.error("Selected vendor not found");
         return;
       }
@@ -210,19 +195,17 @@ const ProcurementEntry = ({ onBack }) => {
       // Upload file if selected
       let fileUrl = null;
       if (dmBillFile) {
-        console.log("📁 Uploading DM/Bill file...");
         fileUrl = await uploadFile(dmBillFile);
         if (!fileUrl) {
           toast.error("Failed to upload file. Please try again.");
           return;
         }
-        console.log("✅ File uploaded successfully:", fileUrl);
       }
 
       if (isEditing) {
         // Update existing procurement
         // TODO: Implement edit functionality
-        toast.info("Edit functionality coming soon");
+        toast("Edit functionality coming soon");
       } else {
         // Add new procurement
         const procurementData = {
@@ -242,18 +225,14 @@ const ProcurementEntry = ({ onBack }) => {
           createdAt: serverTimestamp(),
         };
 
-        console.log("📦 Adding procurement entry:", procurementData);
         let procurementRef;
         try {
           procurementRef = await addDoc(collection(db, "PROCUREMENT_ENTRIES"), procurementData);
-          console.log("✅ Procurement entry added with ID:", procurementRef.id);
         } catch (error) {
-          console.error("❌ Failed to add procurement entry:", error);
           throw error;
         }
 
         // Add to procurement ledger (credit transaction)
-        console.log("📊 Adding to procurement ledger...");
         try {
           await addDoc(collection(db, "PROCUREMENT_LEDGER"), {
             vendorID: selectedVendor,
@@ -270,23 +249,18 @@ const ProcurementEntry = ({ onBack }) => {
             orgID: orgID,
             createdAt: serverTimestamp(),
           });
-          console.log("✅ Procurement ledger entry added");
         } catch (error) {
-          console.error("❌ Failed to add ledger entry:", error);
           throw error;
         }
 
         // Update vendor balance
-        console.log("💰 Updating vendor balance...");
         try {
           const vendorRef = doc(db, "VENDORS", selectedVendor);
           await updateDoc(vendorRef, {
             currentBalance: increment(Number(totalAmount)),
             updatedAt: serverTimestamp(),
           });
-          console.log("✅ Vendor balance updated");
         } catch (error) {
-          console.error("❌ Failed to update vendor balance:", error);
           throw error;
         }
         
@@ -297,26 +271,18 @@ const ProcurementEntry = ({ onBack }) => {
       resetForm();
       
     } catch (error) {
-      console.error("❌ Error saving procurement:", error);
-      console.error("❌ Error details:", {
-        message: error.message,
-        code: error.code,
-        stack: error.stack
-      });
       toast.error(`Failed to save procurement: ${error.message}`);
     }
-  };
+  }, [selectedVendor, itemName, rate, date, category, quantity, totalAmount, vendors, dmBillFile, orgID, orgName, isEditing]);
 
   // Handle delete procurement
-  const handleDeleteProcurement = async (procurement) => {
+  const handleDeleteProcurement = useCallback(async (procurement) => {
     if (!window.confirm(`Delete procurement entry "${procurement.itemName}"? This action cannot be undone.`)) return;
     
     try {
-      console.log("🗑️ Deleting procurement entry:", procurement);
       
       // 1. Delete the procurement entry
       await deleteDoc(doc(db, "PROCUREMENT_ENTRIES", procurement.id));
-      console.log("✅ Procurement entry deleted");
       
       // 2. Create a debit transaction in the ledger to reverse the credit
       await addDoc(collection(db, "PROCUREMENT_LEDGER"), {
@@ -334,7 +300,6 @@ const ProcurementEntry = ({ onBack }) => {
         orgID: procurement.orgID,
         createdAt: serverTimestamp(),
       });
-      console.log("✅ Ledger reversal entry added");
       
       // 3. Update vendor balance (decrease by the amount)
       const vendorRef = doc(db, "VENDORS", procurement.vendorID);
@@ -342,24 +307,22 @@ const ProcurementEntry = ({ onBack }) => {
         currentBalance: increment(-procurement.totalAmount),
         updatedAt: serverTimestamp(),
       });
-      console.log("✅ Vendor balance updated");
       
       toast.success("Procurement entry deleted successfully");
       
     } catch (error) {
-      console.error("❌ Error deleting procurement:", error);
       toast.error(`Failed to delete procurement: ${error.message}`);
     }
-  };
+  }, []);
 
   // Handle edit procurement
-  const handleEditProcurement = (procurement) => {
+  const handleEditProcurement = useCallback((procurement) => {
     // TODO: Implement edit functionality
     toast.info("Edit functionality coming soon");
-  };
+  }, []);
 
   // Reset form
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setSelectedVendor("");
     setCategory("RAW_MATERIAL");
     setItemName("");
@@ -379,12 +342,12 @@ const ProcurementEntry = ({ onBack }) => {
     setUploadedFileUrl("");
     setUploadingFile(false);
     setIsEditing(false);
-  };
+  }, []);
 
 
 
   // Filtered procurement entries
-  const filteredProcurementEntries = procurementEntries.filter(p => {
+  const filteredProcurementEntries = useMemo(() => procurementEntries.filter(p => {
     // Text search filter
     const textMatch = p.itemName?.toLowerCase().includes(procurementSearch.toLowerCase()) ||
                      p.vendorName?.toLowerCase().includes(procurementSearch.toLowerCase()) ||
@@ -414,7 +377,7 @@ const ProcurementEntry = ({ onBack }) => {
     }
     
     return textMatch && dateMatch;
-  });
+  }), [procurementEntries, procurementSearch, selectedFilterDate]);
 
   // Helper functions
   const currency = (n) => new Intl.NumberFormat("en-IN", { 
@@ -423,7 +386,7 @@ const ProcurementEntry = ({ onBack }) => {
     maximumFractionDigits: 0 
   }).format(Number(n || 0));
 
-  const formatDate = (timestamp) => {
+  const formatDate = useCallback((timestamp) => {
     if (!timestamp) return "—";
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
     return date.toLocaleDateString('en-IN', {
@@ -431,10 +394,19 @@ const ProcurementEntry = ({ onBack }) => {
       month: 'short',
       year: 'numeric'
     });
-  };
+  }, []);
+
+  // Memoized vendor options for better performance
+  const vendorOptions = useMemo(() => [
+    { value: "", label: loadingVendors ? "Loading vendors..." : "Select vendor..." },
+    ...vendors.map(v => ({
+      value: v.vendorID || v.id,
+      label: `${v.name} (${v.type})`
+    }))
+  ], [vendors, loadingVendors]);
 
   // File upload functions
-  const handleFileChange = (e) => {
+  const handleFileChange = useCallback((e) => {
     const file = e.target.files[0];
     if (file) {
       // Validate file type
@@ -453,9 +425,9 @@ const ProcurementEntry = ({ onBack }) => {
       setDmBillFile(file);
       setUploadedFileUrl(""); // Clear previous upload
     }
-  };
+  }, []);
 
-  const uploadFile = async (file) => {
+  const uploadFile = useCallback(async (file) => {
     if (!file) return null;
     
     try {
@@ -468,31 +440,28 @@ const ProcurementEntry = ({ onBack }) => {
       
       // Upload file
       const snapshot = await uploadBytes(storageRef, file);
-      console.log('📁 File uploaded successfully:', fileName);
       
       // Get download URL
       const downloadURL = await getDownloadURL(snapshot.ref);
-      console.log('🔗 Download URL generated:', downloadURL);
       
       setUploadedFileUrl(downloadURL);
       return downloadURL;
       
     } catch (error) {
-      console.error('❌ File upload failed:', error);
       toast.error(`File upload failed: ${error.message}`);
       return null;
     } finally {
       setUploadingFile(false);
     }
-  };
+  }, [orgID]);
 
-  const removeFile = () => {
+  const removeFile = useCallback(() => {
     setDmBillFile(null);
     setUploadedFileUrl("");
-  };
+  }, []);
 
   // Role-based access control functions
-  const canEditOrDeleteEntry = (entry) => {
+  const canEditOrDeleteEntry = useCallback((entry) => {
     if (isAdmin) {
       return true; // Admin can edit/delete all entries
     }
@@ -524,9 +493,9 @@ const ProcurementEntry = ({ onBack }) => {
     }
     
     return false; // Regular users cannot edit/delete
-  };
+  }, [isAdmin, isManager]);
 
-  const getActionButtonTooltip = (entry) => {
+  const getActionButtonTooltip = useCallback((entry) => {
     if (isAdmin) {
       return "Admin: Can edit/delete all entries";
     }
@@ -540,7 +509,7 @@ const ProcurementEntry = ({ onBack }) => {
     }
     
     return "No edit/delete permissions";
-  };
+  }, [isAdmin, isManager, canEditOrDeleteEntry]);
 
   // Show loading state if no organization is selected
   if (!selectedOrg) {
@@ -562,6 +531,7 @@ const ProcurementEntry = ({ onBack }) => {
         onBack={onBack || (() => window.history.back())}
         role={isAdmin ? "admin" : "manager"}
         roleDisplay={isAdmin ? "👑 Admin" : "👔 Manager"}
+        subtitle={`📊 Reads: ${readCount}`}
       />
 
       {/* Main content container */}
@@ -602,23 +572,17 @@ const ProcurementEntry = ({ onBack }) => {
                         <SelectField
                           label="🏢 Vendor *"
                           value={selectedVendor}
-                          onChange={(e) => setSelectedVendor(e.target.value)}
+                          onChange={(value) => setSelectedVendor(value)}
                           required
                           disabled={loadingVendors}
-                          options={[
-                            { value: "", label: loadingVendors ? "Loading vendors..." : "Select vendor..." },
-                            ...vendors.map(v => ({
-                              value: v.vendorID || v.id,
-                              label: `${v.name} (${v.type})`
-                            }))
-                          ]}
+                          options={vendorOptions}
                         />
                       </div>
                       <div className="form-group">
                         <SelectField
                           label="🏷️ Category *"
                           value={category}
-                          onChange={(e) => setCategory(e.target.value)}
+                          onChange={(value) => setCategory(value)}
                           required
                           options={[
                             { value: "RAW_MATERIAL", label: "Raw Material" },
@@ -663,7 +627,7 @@ const ProcurementEntry = ({ onBack }) => {
                             <SelectField
                               label="📐 Unit"
                               value={unit}
-                              onChange={(e) => setUnit(e.target.value)}
+                              onChange={(value) => setUnit(value)}
                               options={[
                                 { value: "kg", label: "Kilograms (kg)" },
                                 { value: "tons", label: "Tons" },
@@ -744,9 +708,14 @@ const ProcurementEntry = ({ onBack }) => {
                           {dmBillFile && (
                             <div className="file-info">
                               <span className="file-name">📄 {dmBillFile.name}</span>
-                              <button type="button" onClick={removeFile} className="remove-file-btn">
+                              <ActionButton 
+                                type="button" 
+                                onClick={removeFile} 
+                                variant="danger"
+                                size="sm"
+                              >
                                 ❌
-                              </button>
+                              </ActionButton>
                             </div>
                           )}
                           {uploadingFile && (

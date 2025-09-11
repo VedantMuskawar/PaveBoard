@@ -1,0 +1,365 @@
+/* Production Entries Page - Optimized for DieselPage theme */
+.production-entries-page {
+  /* Styles now handled by DieselPage component */
+}
+
+/* Form Styles - Dark theme compatible */
+.form-card {
+  background: rgba(28, 28, 30, 0.8);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+
+.production-form {
+  padding: 2rem;
+}
+
+.form-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.form-section {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1.5rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.form-section h3 {
+  margin: 0 0 1rem 0;
+  color: #f5f5f7;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.form-row:last-child {
+  margin-bottom: 0;
+}
+
+/* Wage Configuration - Dark theme */
+.wage-summary {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 1rem;
+}
+
+.wage-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.wage-info span:first-child {
+  font-weight: 600;
+  color: #32D74B;
+  font-size: 1.1rem;
+}
+
+.wage-info span:last-child {
+  color: #9ba3ae;
+  font-size: 0.9rem;
+}
+
+/* Wage Allocations - Dark theme */
+.wage-allocations {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.wage-allocations h4 {
+  margin: 0;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 1rem;
+  font-weight: 600;
+  color: #f5f5f7;
+}
+
+.allocations-table {
+  display: flex;
+  flex-direction: column;
+}
+
+.table-header {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-weight: 600;
+  color: #f5f5f7;
+  font-size: 0.875rem;
+}
+
+.table-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  align-items: center;
+}
+
+.table-row:last-child {
+  border-bottom: none;
+}
+
+.wage-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.wage-input input {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  background: rgba(255, 255, 255, 0.1);
+  color: #f5f5f7;
+}
+
+.wage-input input:disabled {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #9ba3ae;
+}
+
+.currency {
+  color: #9ba3ae;
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+
+/* No Employees Message - Dark theme */
+.no-employees-message {
+  background: rgba(255, 193, 7, 0.1);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 8px;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.no-employees-message p {
+  margin: 0 0 1rem 0;
+  color: #ffc107;
+  font-weight: 500;
+}
+
+/* Labour Selection with Checkboxes - Dark theme */
+.labour-selection {
+  margin-bottom: 1rem;
+}
+
+.form-label {
+  display: block;
+  font-weight: 600;
+  color: #f5f5f7;
+  margin-bottom: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.checkbox-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.checkbox-item:has(input:checked) {
+  background: rgba(10, 132, 255, 0.1);
+  border-color: #0A84FF;
+}
+
+.checkbox-label {
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  flex: 1;
+}
+
+.employee-name {
+  font-weight: 600;
+  color: #f5f5f7;
+  font-size: 0.875rem;
+}
+
+.employee-id {
+  color: #9ba3ae;
+  font-size: 0.75rem;
+  font-family: monospace;
+}
+
+.error-text {
+  color: #ff4444;
+  font-size: 0.75rem;
+  margin: 0.5rem 0 0 0;
+  font-weight: 500;
+}
+
+/* Form Actions - Dark theme */
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.submit-button {
+  background: linear-gradient(135deg, #0A84FF, #0066CC);
+  color: white;
+  padding: 0.75rem 2rem;
+  font-weight: 600;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.submit-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0066CC, #004499);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(10, 132, 255, 0.25);
+}
+
+.submit-button:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Removed unused batch styles - now using DataTable component */
+
+/* Batch Details Modal - Dark theme */
+.batch-details-modal {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.modal-section {
+  margin-bottom: 2rem;
+}
+
+.modal-section:last-child {
+  margin-bottom: 0;
+}
+
+.modal-section h4 {
+  margin: 0 0 1rem 0;
+  color: #f5f5f7;
+  font-size: 1.25rem;
+  font-weight: 600;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.detail-item span:first-child {
+  color: #9ba3ae;
+  font-weight: 500;
+}
+
+.detail-item span:last-child {
+  color: #f5f5f7;
+  font-weight: 600;
+}
+
+.labour-table {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.labour-table .table-header {
+  background: rgba(255, 255, 255, 0.05);
+  font-weight: 600;
+  color: #f5f5f7;
+  font-size: 0.875rem;
+}
+
+.labour-table .table-row {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.labour-table .table-row:last-child {
+  border-bottom: none;
+}
+
+/* Responsive Design - Dark theme */
+@media (max-width: 768px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .table-header,
+  .table-row {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .table-header span,
+  .table-row span {
+    text-align: left;
+  }
+}
+
+@media (max-width: 480px) {
+  .checkbox-grid {
+    grid-template-columns: 1fr;
+  }
+}

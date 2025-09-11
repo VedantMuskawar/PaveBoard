@@ -32,6 +32,7 @@ import {
   DieselPage,
   FilterBar
 } from "../../components/ui";
+import VehicleModal from "../../components/ui/VehicleModal";
 import './VehicleManagement.css';
 
 const ManageVehicle = ({ onBack }) => {
@@ -47,28 +48,13 @@ const ManageVehicle = ({ onBack }) => {
   const handleBack = onBack || (() => window.history.back());
   
   const [vehicles, setVehicles] = useState([]);
-  const [activeForm, setActiveForm] = useState(null);
+  const [showVehicleModal, setShowVehicleModal] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState(null);
   const [loading, setLoading] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [vehicleToDelete, setVehicleToDelete] = useState(null);
-  const [formData, setFormData] = useState({
-    vehicleNo: "",
-    type: "",
-    meterType: "",
-    vehicleQuantity: 0,
-    status: "Active",
-    weeklyCapacity: {
-      Thu: 0,
-      Fri: 0,
-      Sat: 0,
-      Sun: 0,
-      Mon: 0,
-      Tue: 0,
-      Wed: 0
-    }
-  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Fetch vehicles with real-time updates
   useEffect(() => {
@@ -133,49 +119,10 @@ const ManageVehicle = ({ onBack }) => {
   };
 
 
-  // Reset form data
-  const resetFormData = useCallback(() => {
-    setFormData({
-      vehicleNo: "",
-      type: "",
-      meterType: "",
-      vehicleQuantity: 0,
-      status: "Active",
-      weeklyCapacity: {
-        Thu: 0,
-        Fri: 0,
-        Sat: 0,
-        Sun: 0,
-        Mon: 0,
-        Tue: 0,
-        Wed: 0
-      }
-    });
-    setEditingVehicle(null);
-  }, []);
-
-  // Handle form input changes
-  const handleInputChange = useCallback((field, value) => {
-    if (field.startsWith('weeklyCapacity.')) {
-      const day = field.split('.')[1];
-      setFormData(prev => ({
-        ...prev,
-        weeklyCapacity: {
-          ...prev.weeklyCapacity,
-          [day]: parseInt(value) || 0
-        }
-      }));
-    } else {
-      setFormData(prev => ({
-        ...prev,
-        [field]: value
-      }));
-    }
-  }, []);
 
   // Add or update vehicle
-  const handleSubmitVehicle = async (e) => {
-    e.preventDefault();
+  const handleSubmitVehicle = async (formData) => {
+    setIsSubmitting(true);
     try {
       const data = {
         ...formData,
@@ -192,41 +139,33 @@ const ManageVehicle = ({ onBack }) => {
         toast.success("Vehicle added successfully");
       }
       
-      resetFormData();
-      setActiveForm(null);
+      setShowVehicleModal(false);
+      setEditingVehicle(null);
     } catch (error) {
       console.error("Error saving vehicle:", error);
       toast.error("Failed to save vehicle");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   // Edit vehicle
   const handleEditVehicle = useCallback((vehicle) => {
     setEditingVehicle(vehicle);
-    setFormData({
-      vehicleNo: vehicle.vehicleNo || "",
-      type: vehicle.type || "",
-      meterType: vehicle.meterType || "",
-      vehicleQuantity: vehicle.vehicleQuantity || 0,
-      status: vehicle.status || "Active",
-      weeklyCapacity: vehicle.weeklyCapacity || {
-        Thu: 0,
-        Fri: 0,
-        Sat: 0,
-        Sun: 0,
-        Mon: 0,
-        Tue: 0,
-        Wed: 0
-      }
-    });
-    setActiveForm("Vehicles");
+    setShowVehicleModal(true);
   }, []);
 
-  // Cancel edit
-  const handleCancelEdit = useCallback(() => {
-    resetFormData();
-    setActiveForm(null);
-  }, [resetFormData]);
+  // Handle modal close
+  const handleCloseModal = useCallback(() => {
+    setShowVehicleModal(false);
+    setEditingVehicle(null);
+  }, []);
+
+  // Handle add vehicle
+  const handleAddVehicle = useCallback(() => {
+    setEditingVehicle(null);
+    setShowVehicleModal(true);
+  }, []);
 
   // Filter vehicles based on search text
   const filteredVehicles = useMemo(() => {
@@ -313,10 +252,7 @@ const ManageVehicle = ({ onBack }) => {
         <FilterBar.Actions>
           <Button
             variant="primary"
-            onClick={() => {
-              resetFormData();
-              setActiveForm("Vehicles");
-            }}
+            onClick={handleAddVehicle}
             size="md"
           >
             ➕ Add Vehicle
@@ -335,84 +271,14 @@ const ManageVehicle = ({ onBack }) => {
       <div style={{ marginTop: "1.5rem", padding: "0 2rem", width: "100%", boxSizing: "border-box" }}>
         <div>
 
-          {/* Modal for Form */}
-          <Modal
-            isOpen={activeForm === "Vehicles"}
-            onClose={handleCancelEdit}
-            title={editingVehicle ? "Edit Vehicle" : "Add Vehicle"}
-            className="modal-content"
-          >
-            <form onSubmit={handleSubmitVehicle} className="form-section">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <Input
-                  placeholder="Vehicle No"
-                  value={formData.vehicleNo}
-                  onChange={(e) => handleInputChange('vehicleNo', e.target.value)}
-                  required
-                  className="vehicle-input"
-                />
-                <Input
-                  placeholder="Type"
-                  value={formData.type}
-                  onChange={(e) => handleInputChange('type', e.target.value)}
-                  required
-                  className="vehicle-input"
-                />
-                <Input
-                  placeholder="Meter Type"
-                  value={formData.meterType}
-                  onChange={(e) => handleInputChange('meterType', e.target.value)}
-                  required
-                  className="vehicle-input"
-                />
-                <NumberInput
-                  placeholder="Vehicle Quantity"
-                  value={formData.vehicleQuantity}
-                  onChange={(e) => handleInputChange('vehicleQuantity', e.target.value)}
-                  required
-                  min="0"
-                  className="vehicle-input"
-                />
-                <SelectField
-                  label="Status"
-                  value={formData.status}
-                  onChange={(e) => handleInputChange('status', e.target.value)}
-                  options={[
-                    { value: "Active", label: "Active" },
-                    { value: "Inactive", label: "Inactive" }
-                  ]}
-                  className="vehicle-input"
-                />
-              </div>
-
-              {/* Weekly Capacity Section */}
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold text-white mb-4">Weekly Capacity (Thu → Wed)</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {['Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue', 'Wed'].map(day => (
-                    <div key={day} className="flex flex-col">
-                      <label className="text-sm text-gray-300 mb-1">{day}</label>
-                      <NumberInput
-                        value={formData.weeklyCapacity[day]}
-                        onChange={(e) => handleInputChange(`weeklyCapacity.${day}`, e.target.value)}
-                        min="0"
-                        className="vehicle-input"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex gap-4">
-                <Button type="submit" variant="primary" className="submit-btn">
-                  {editingVehicle ? "Update Vehicle" : "Add Vehicle"}
-                </Button>
-                <Button type="button" variant="outline" onClick={handleCancelEdit}>
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          </Modal>
+          {/* Enhanced Vehicle Modal */}
+          <VehicleModal
+            show={showVehicleModal}
+            onClose={handleCloseModal}
+            onSubmit={handleSubmitVehicle}
+            editingVehicle={editingVehicle}
+            isLoading={isSubmitting}
+          />
 
           {/* Vehicles Table */}
           <div style={{

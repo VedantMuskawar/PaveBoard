@@ -19,7 +19,28 @@ import {
   DieselPage
 } from "../../components/ui";
 import "./PendingOrders.css";
-import { calculateEstimatedDeliveryTimes } from "../../utils/schedulingUtils";
+
+// Add CSS for spinner animation
+const spinnerStyle = `
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+`;
+
+// Inject the CSS
+if (typeof document !== 'undefined') {
+  const style = document.createElement('style');
+  style.textContent = spinnerStyle;
+  document.head.appendChild(style);
+}
+import { 
+  scheduleDeliveries,
+  formatDeliveryDate, 
+  calculateDaysUntilDelivery, 
+  getDeliveryStatus,
+  getColorClasses
+} from "../../utils/enhancedDeliveryScheduler";
 
 const PendingOrders = ({ onBack }) => {
   const { selectedOrganization: selectedOrg } = useOrganization();
@@ -34,6 +55,15 @@ const PendingOrders = ({ onBack }) => {
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState("");
+  const [schedulingData, setSchedulingData] = useState({
+    assignedOrders: [],
+    thresholdStats: [],
+    totalWeeklyCapacity: 0,
+    startDate: null
+  });
+  const [isCalculating, setIsCalculating] = useState(false);
+  const [lastCalculated, setLastCalculated] = useState(null);
+  const [showDebugInfo, setShowDebugInfo] = useState(false);
 
   // Configurable quantity thresholds
   const QUANTITY_THRESHOLDS = [1500, 2500, 3000, 4000];
@@ -43,8 +73,9 @@ const PendingOrders = ({ onBack }) => {
     if (!selectedOrg?.orgID) return;
 
     const q = query(
-      collection(db, "PENDING_SIMULATION"),
-      where("orgID", "==", selectedOrg.orgID)
+      collection(db, "DEF_ORDERS"),
+      where("orgID", "==", selectedOrg.orgID),
+      where("orderCount", ">", 0) // Only get orders with pending quantities
     );
 
     const unsubscribe = onSnapshot(q, 
@@ -54,10 +85,10 @@ const PendingOrders = ({ onBack }) => {
           ...doc.data()
         }));
         
-        // Sort by simulatedDeliveryDate on the client side
+        // Sort by deliveryDate on the client side
         const sortedOrders = orders.sort((a, b) => {
-          const dateA = a.simulatedDeliveryDate?.toDate ? a.simulatedDeliveryDate.toDate() : new Date(a.simulatedDeliveryDate?.seconds * 1000 || 0);
-          const dateB = b.simulatedDeliveryDate?.toDate ? b.simulatedDeliveryDate.toDate() : new Date(b.simulatedDeliveryDate?.seconds * 1000 || 0);
+          const dateA = a.deliveryDate?.toDate ? a.deliveryDate.toDate() : new Date(a.deliveryDate?.seconds * 1000 || 0);
+          const dateB = b.deliveryDate?.toDate ? b.deliveryDate.toDate() : new Date(b.deliveryDate?.seconds * 1000 || 0);
           return dateA - dateB;
         });
         
@@ -73,6 +104,16 @@ const PendingOrders = ({ onBack }) => {
 
     return () => unsubscribe();
   }, [selectedOrg?.orgID]);
+
+  // Initialize scheduling data without automatic calculation
+  useEffect(() => {
+    setSchedulingData({
+      assignedOrders: pendingOrders,
+      thresholdStats: [],
+      totalWeeklyCapacity: 0,
+      startDate: null
+    });
+  }, [pendingOrders]);
 
   // Fetch vehicles for capacity calculations
   useEffect(() => {
@@ -103,52 +144,81 @@ const PendingOrders = ({ onBack }) => {
 
   // Filter orders based on search text
   const filteredOrders = useMemo(() => {
-    if (!searchText) return pendingOrders;
+    if (!searchText) return schedulingData.assignedOrders;
     
-    return pendingOrders.filter(order => {
+    return schedulingData.assignedOrders.filter(order => {
       const searchLower = searchText.toLowerCase();
       return (
         order.clientName?.toLowerCase().includes(searchLower) ||
         order.productName?.toLowerCase().includes(searchLower) ||
-        order.vehicleNo?.toLowerCase().includes(searchLower) ||
-        order.regionName?.toLowerCase().includes(searchLower)
+        order.regionName?.toLowerCase().includes(searchLower) ||
+        order.vehicleNo?.toLowerCase().includes(searchLower)
       );
     });
-  }, [pendingOrders, searchText]);
+  }, [schedulingData.assignedOrders, searchText]);
 
-  // Calculate total weekly capacity from active vehicles
-  const totalWeeklyCapacity = useMemo(() => {
-    return vehicles.reduce((total, vehicle) => {
-      if (!vehicle.weeklyCapacity) return total;
-      const weeklyCap = Object.values(vehicle.weeklyCapacity).reduce((sum, cap) => sum + (cap || 0), 0);
-      return total + weeklyCap;
-    }, 0);
-  }, [vehicles]);
+  // Use total weekly capacity from scheduling data
+  const totalWeeklyCapacity = schedulingData.totalWeeklyCapacity;
 
-  // Calculate estimated delivery times by quantity thresholds
-  const estimatedDeliveryTimes = useMemo(() => {
-    return calculateEstimatedDeliveryTimes(filteredOrders, vehicles, QUANTITY_THRESHOLDS);
-  }, [filteredOrders, vehicles, QUANTITY_THRESHOLDS]);
+  // Use threshold stats from scheduling data
+  const thresholdStats = schedulingData.thresholdStats;
+
+  // Manual calculation trigger function
+  const handleCalculateDeliveryDates = useCallback(async () => {
+    if (pendingOrders.length === 0) {
+      toast.error("No orders available for calculation");
+      return;
+    }
+
+    if (vehicles.length === 0) {
+      toast.error("No vehicles available for calculation");
+      return;
+    }
+
+    setIsCalculating(true);
+    try {
+      console.log("🚀 Manual calculation triggered");
+      const schedulingResult = scheduleDeliveries(pendingOrders, vehicles);
+      setSchedulingData(schedulingResult);
+      setLastCalculated(new Date());
+      toast.success("Delivery dates calculated successfully!");
+    } catch (error) {
+      console.error("Error calculating delivery dates:", error);
+      toast.error("Failed to calculate delivery dates");
+    } finally {
+      setIsCalculating(false);
+    }
+  }, [pendingOrders, vehicles]);
 
   // Calculate summary data
   const summaryData = useMemo(() => {
     const totalOrders = filteredOrders.length;
     const totalQuantity = filteredOrders.reduce((sum, order) => sum + (order.productQuant || 0), 0);
     
-    // Calculate per-vehicle utilization
+    // Calculate per-region and per-vehicle utilization
+    const regionUtilization = {};
     const vehicleUtilization = {};
     filteredOrders.forEach(order => {
-      const vehicleNo = order.vehicleNo || "Unknown";
-      if (!vehicleUtilization[vehicleNo]) {
-        vehicleUtilization[vehicleNo] = { count: 0, quantity: 0 };
+      // Region utilization
+      const region = order.regionName || "Unknown";
+      if (!regionUtilization[region]) {
+        regionUtilization[region] = { count: 0, quantity: 0 };
       }
-      vehicleUtilization[vehicleNo].count++;
-      vehicleUtilization[vehicleNo].quantity += order.productQuant || 0;
+      regionUtilization[region].count++;
+      regionUtilization[region].quantity += order.productQuant || 0;
+      
+      // Vehicle utilization
+      const vehicle = order.vehicleNo || "Not Assigned";
+      if (!vehicleUtilization[vehicle]) {
+        vehicleUtilization[vehicle] = { count: 0, quantity: 0, type: order.vehicleType || 'Unknown' };
+      }
+      vehicleUtilization[vehicle].count++;
+      vehicleUtilization[vehicle].quantity += order.productQuant || 0;
     });
 
     // Find earliest and latest delivery dates
     const deliveryDates = filteredOrders
-      .map(order => order.simulatedDeliveryDate)
+      .map(order => order.deliveryDate)
       .filter(date => date)
       .map(date => date.toDate ? date.toDate() : new Date(date.seconds * 1000))
       .sort((a, b) => a - b);
@@ -159,6 +229,7 @@ const PendingOrders = ({ onBack }) => {
     return {
       totalOrders,
       totalQuantity,
+      regionUtilization,
       vehicleUtilization,
       earliestDelivery,
       latestDelivery
@@ -203,34 +274,66 @@ const PendingOrders = ({ onBack }) => {
       icon: '📊'
     },
     {
+      key: 'regionName',
+      header: 'Region',
+      align: 'left',
+      icon: '📍'
+    },
+    {
       key: 'vehicleNo',
-      header: 'Vehicle No',
+      header: 'Assigned Vehicle',
       align: 'center',
-      icon: '🚛'
+      icon: '🚛',
+      render: (row) => row.vehicleNo || 'Not Assigned'
     },
     {
       key: 'vehicleType',
       header: 'Vehicle Type',
       align: 'center',
-      icon: '🚜'
+      icon: '🚜',
+      render: (row) => row.vehicleType || 'N/A'
     },
     {
-      key: 'simulatedDeliveryDate',
-      header: 'Simulated Delivery',
+      key: 'estimatedDeliveryDate',
+      header: 'Estimated Delivery',
       align: 'center',
       icon: '📅',
-      render: (row) => formatDate(row.simulatedDeliveryDate)
+      render: (row) => {
+        if (!row.estimatedDeliveryDate) return 'N/A';
+        const daysUntil = calculateDaysUntilDelivery(row.estimatedDeliveryDate);
+        const status = getDeliveryStatus(daysUntil);
+        return (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ 
+              color: status.color === 'red' ? '#ef4444' : 
+                    status.color === 'orange' ? '#f97316' :
+                    status.color === 'yellow' ? '#eab308' :
+                    status.color === 'green' ? '#22c55e' :
+                    status.color === 'blue' ? '#3b82f6' : '#9ca3af'
+            }}>
+              {formatDeliveryDate(row.estimatedDeliveryDate)}
+            </div>
+            {daysUntil !== null && (
+              <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
+                {daysUntil === 0 ? 'Today' : 
+                 daysUntil === 1 ? 'Tomorrow' : 
+                 `${daysUntil} days`}
+              </div>
+            )}
+          </div>
+        );
+      }
     },
     {
-      key: 'status',
-      header: 'Status',
+      key: 'orderCount',
+      header: 'Pending Orders',
       align: 'center',
-      icon: '📊',
+      icon: '📋',
       render: (row) => (
         <Badge 
-          variant={row.status === "completed" ? "success" : "warning"}
+          variant={row.orderCount > 0 ? "warning" : "success"}
         >
-          {row.status === "completed" ? "Completed" : "Pending"}
+          {row.orderCount || 0}
         </Badge>
       )
     }
@@ -247,7 +350,7 @@ const PendingOrders = ({ onBack }) => {
           role={isAdmin ? "admin" : "manager"}
           roleDisplay={isAdmin ? "👑 Admin" : "👔 Manager"}
         />
-        <LoadingState variant="inline" message="Loading pending orders..." icon="⏳" />
+        <LoadingState variant="inline" message="Loading orders..." icon="⏳" />
       </DieselPage>
     );
   }
@@ -262,12 +365,76 @@ const PendingOrders = ({ onBack }) => {
       
       {/* Filter Bar */}
       <FilterBar style={{ marginTop: "1.5rem", marginBottom: "2rem" }}>
-        <FilterBar.Search
-          placeholder="Search orders..."
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          style={{ width: "300px" }}
-        />
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem", width: "100%" }}>
+          <FilterBar.Search
+            placeholder="Search orders by client, product, region, or vehicle..."
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            style={{ flex: 1, maxWidth: "400px" }}
+          />
+          
+          <Button
+            onClick={handleCalculateDeliveryDates}
+            disabled={isCalculating || pendingOrders.length === 0 || vehicles.length === 0}
+            variant="primary"
+            style={{
+              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+              border: "none",
+              borderRadius: "8px",
+              padding: "0.75rem 1.5rem",
+              fontWeight: "600",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              minWidth: "200px"
+            }}
+          >
+            {isCalculating ? (
+              <>
+                <div style={{
+                  width: "16px",
+                  height: "16px",
+                  border: "2px solid #ffffff",
+                  borderTop: "2px solid transparent",
+                  borderRadius: "50%",
+                  animation: "spin 1s linear infinite"
+                }} />
+                Calculating...
+              </>
+            ) : (
+              <>
+                ⚡ Calculate Delivery Dates
+              </>
+            )}
+          </Button>
+          
+          {lastCalculated && (
+            <div style={{
+              fontSize: "0.875rem",
+              color: "#9ca3af",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem"
+            }}>
+              <span>🕒</span>
+              <span>Last calculated: {lastCalculated.toLocaleTimeString()}</span>
+            </div>
+          )}
+          
+          <Button
+            onClick={() => setShowDebugInfo(!showDebugInfo)}
+            variant="outline"
+            style={{
+              background: "rgba(55,65,81,0.5)",
+              border: "1px solid rgba(255,255,255,0.2)",
+              borderRadius: "8px",
+              padding: "0.5rem 1rem",
+              fontSize: "0.875rem"
+            }}
+          >
+            {showDebugInfo ? "🔍 Hide Debug" : "🔍 Show Debug"}
+          </Button>
+        </div>
       </FilterBar>
       
       {/* Main Content Container */}
@@ -286,13 +453,13 @@ const PendingOrders = ({ onBack }) => {
             }}>
               <div style={{ display: "flex", alignItems: "center", marginBottom: "0.5rem" }}>
                 <span style={{ fontSize: "1.5rem", marginRight: "0.5rem" }}>📊</span>
-                <h3 style={{ color: "#00c3ff", fontWeight: "600", margin: 0 }}>Total Pending Orders</h3>
+                <h3 style={{ color: "#00c3ff", fontWeight: "600", margin: 0 }}>Total Orders</h3>
               </div>
               <div style={{ fontSize: "2rem", fontWeight: "bold", color: "#fff", marginBottom: "0.25rem" }}>
                 {summaryData.totalOrders}
               </div>
               <div style={{ fontSize: "0.875rem", color: "#9ca3af" }}>
-                Orders awaiting delivery
+                Orders with pending quantities
               </div>
             </div>
 
@@ -317,7 +484,121 @@ const PendingOrders = ({ onBack }) => {
             </div>
           </div>
 
-          {/* Estimated Delivery Times by Quantity Thresholds */}
+          {/* Debug Information Panel */}
+          {showDebugInfo && (
+            <div style={{
+              background: "rgba(20,20,22,0.8)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "16px",
+              padding: "1.5rem",
+              marginBottom: "2rem",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.1)"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: "1rem" }}>
+                <span style={{ fontSize: "1.5rem", marginRight: "0.5rem" }}>🔍</span>
+                <h3 style={{ color: "#fff", fontWeight: "600", margin: 0, fontSize: "1.25rem" }}>
+                  Debug Information
+                </h3>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div style={{
+                  background: "rgba(55,65,81,0.5)",
+                  borderRadius: "8px",
+                  padding: "1rem",
+                  border: "1px solid rgba(255,255,255,0.1)"
+                }}>
+                  <div style={{ fontSize: "0.875rem", color: "#9ca3af", marginBottom: "0.5rem" }}>
+                    Total Orders
+                  </div>
+                  <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#fff" }}>
+                    {schedulingData.assignedOrders.length}
+                  </div>
+                </div>
+                
+                <div style={{
+                  background: "rgba(55,65,81,0.5)",
+                  borderRadius: "8px",
+                  padding: "1rem",
+                  border: "1px solid rgba(255,255,255,0.1)"
+                }}>
+                  <div style={{ fontSize: "0.875rem", color: "#9ca3af", marginBottom: "0.5rem" }}>
+                    Assigned Orders
+                  </div>
+                  <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#22c55e" }}>
+                    {schedulingData.assignedOrders.filter(order => order.assignedVehicle).length}
+                  </div>
+                </div>
+                
+                <div style={{
+                  background: "rgba(55,65,81,0.5)",
+                  borderRadius: "8px",
+                  padding: "1rem",
+                  border: "1px solid rgba(255,255,255,0.1)"
+                }}>
+                  <div style={{ fontSize: "0.875rem", color: "#9ca3af", marginBottom: "0.5rem" }}>
+                    Unassigned Orders
+                  </div>
+                  <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#ef4444" }}>
+                    {schedulingData.assignedOrders.filter(order => !order.assignedVehicle).length}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Delivery Date Distribution */}
+              <div style={{ marginTop: "1rem" }}>
+                <h4 style={{ color: "#fff", fontSize: "1rem", marginBottom: "0.5rem" }}>
+                  Delivery Date Distribution
+                </h4>
+                <div style={{
+                  background: "rgba(55,65,81,0.3)",
+                  borderRadius: "8px",
+                  padding: "1rem",
+                  maxHeight: "200px",
+                  overflowY: "auto"
+                }}>
+                  {(() => {
+                    const dateDistribution = schedulingData.assignedOrders
+                      .filter(order => order.estimatedDeliveryDate)
+                      .reduce((acc, order) => {
+                        const date = order.estimatedDeliveryDate.toISOString().split('T')[0];
+                        if (!acc[date]) {
+                          acc[date] = { count: 0, orders: [] };
+                        }
+                        acc[date].count++;
+                        acc[date].orders.push(order);
+                        return acc;
+                      }, {});
+                    
+                    return Object.entries(dateDistribution)
+                      .sort(([a], [b]) => new Date(a) - new Date(b))
+                      .map(([date, data]) => (
+                        <div key={date} style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "0.5rem 0",
+                          borderBottom: "1px solid rgba(255,255,255,0.1)"
+                        }}>
+                          <span style={{ color: "#fff", fontSize: "0.875rem" }}>
+                            {new Date(date).toLocaleDateString('en-IN', { 
+                              weekday: 'short', 
+                              month: 'short', 
+                              day: 'numeric' 
+                            })}
+                          </span>
+                          <span style={{ color: "#22c55e", fontWeight: "bold" }}>
+                            {data.count} orders
+                          </span>
+                        </div>
+                      ));
+                  })()}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* New Summary Stats: Estimated Delivery Time by Product Quantity Thresholds */}
           <div style={{
             background: "rgba(20,20,22,0.6)",
             border: "1px solid rgba(255,255,255,0.1)",
@@ -326,74 +607,133 @@ const PendingOrders = ({ onBack }) => {
             marginBottom: "2rem",
             boxShadow: "0 8px 32px rgba(0,0,0,0.1)"
           }}>
-            <div style={{ display: "flex", alignItems: "center", marginBottom: "1.5rem" }}>
-              <span style={{ fontSize: "1.5rem", marginRight: "0.5rem" }}>⏱️</span>
-              <h2 style={{ color: "#fff", fontWeight: "600", margin: 0, fontSize: "1.25rem" }}>
-                Estimated Delivery Times by Quantity
-              </h2>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
+              <div style={{ display: "flex", alignItems: "center" }}>
+                <span style={{ fontSize: "1.5rem", marginRight: "0.5rem" }}>⚡</span>
+                <h2 style={{ color: "#fff", fontWeight: "600", margin: 0, fontSize: "1.25rem" }}>
+                  Estimated Delivery Time by Product Quantity Thresholds
+                </h2>
+              </div>
+              
+              {schedulingData.startDate && (
+                <div style={{
+                  fontSize: "0.875rem",
+                  color: "#9ca3af",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  background: "rgba(55,65,81,0.5)",
+                  padding: "0.5rem 1rem",
+                  borderRadius: "8px",
+                  border: "1px solid rgba(255,255,255,0.1)"
+                }}>
+                  <span>📅</span>
+                  <span>Scheduling from: {schedulingData.startDate.toLocaleDateString()}</span>
+                </div>
+              )}
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-              {estimatedDeliveryTimes.map((item, index) => (
-                <div 
-                  key={index}
+            {thresholdStats.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {thresholdStats.map((item, index) => {
+                  const colorClasses = getColorClasses(item.color);
+                  return (
+                    <div 
+                      key={index}
+                      style={{
+                        borderRadius: "12px",
+                        padding: "1.5rem",
+                        border: "2px solid",
+                        transition: "all 0.2s ease",
+                        background: colorClasses.background,
+                        borderColor: colorClasses.borderColor
+                      }}
+                    >
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{
+                          fontSize: "1.5rem",
+                          fontWeight: "bold",
+                          marginBottom: "0.5rem",
+                          color: colorClasses.textColor
+                        }}>
+                          {item.range}
+                        </div>
+                        
+                        <div style={{ fontSize: "0.875rem", color: "#d1d5db", marginBottom: "0.25rem" }}>
+                          Pending: {item.totalQuantity.toLocaleString()}
+                        </div>
+                        
+                        <div style={{
+                          fontSize: "1.125rem",
+                          fontWeight: "600",
+                          color: colorClasses.lightTextColor
+                        }}>
+                          ETA: {item.estimatedDays === 0 ? 'N/A' : `${item.estimatedDays} day${item.estimatedDays === 1 ? '' : 's'}`}
+                        </div>
+                        
+                        {item.estimatedDays > 0 && (
+                          <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: "0.25rem" }}>
+                            {totalWeeklyCapacity > 0 ? `Based on ${totalWeeklyCapacity.toLocaleString()} weekly capacity` : 'No active vehicles'}
+                          </div>
+                        )}
+                        
+                        <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: "0.25rem" }}>
+                          {item.orderCount} order{item.orderCount === 1 ? '' : 's'}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{
+                textAlign: "center",
+                padding: "3rem 1rem",
+                background: "rgba(55,65,81,0.3)",
+                borderRadius: "12px",
+                border: "2px dashed rgba(255,255,255,0.2)"
+              }}>
+                <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>⚡</div>
+                <h3 style={{ color: "#fff", marginBottom: "0.5rem", fontSize: "1.25rem" }}>
+                  No Delivery Estimates Yet
+                </h3>
+                <p style={{ color: "#9ca3af", marginBottom: "1.5rem", fontSize: "0.875rem" }}>
+                  Click the "Calculate Delivery Dates" button to see estimated delivery times by quantity thresholds
+                </p>
+                <Button
+                  onClick={handleCalculateDeliveryDates}
+                  disabled={isCalculating || pendingOrders.length === 0 || vehicles.length === 0}
+                  variant="primary"
                   style={{
-                    borderRadius: "12px",
-                    padding: "1rem",
-                    border: "2px solid",
-                    transition: "all 0.2s ease",
-                    ...(item.color === 'green' ? {
-                      background: "rgba(34,197,94,0.1)",
-                      borderColor: "rgba(34,197,94,0.3)"
-                    } : item.color === 'orange' ? {
-                      background: "rgba(251,191,36,0.1)",
-                      borderColor: "rgba(251,191,36,0.3)"
-                    } : item.color === 'red' ? {
-                      background: "rgba(239,68,68,0.1)",
-                      borderColor: "rgba(239,68,68,0.3)"
-                    } : {
-                      background: "rgba(107,114,128,0.1)",
-                      borderColor: "rgba(107,114,128,0.3)"
-                    })
+                    background: "linear-gradient(135deg, #0A84FF, #0066CC)",
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "0.75rem 1.5rem",
+                    color: "#fff",
+                    fontWeight: "600",
+                    fontSize: "0.875rem",
+                    cursor: pendingOrders.length === 0 || vehicles.length === 0 ? "not-allowed" : "pointer",
+                    opacity: pendingOrders.length === 0 || vehicles.length === 0 ? 0.5 : 1
                   }}
                 >
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{
-                      fontSize: "1.5rem",
-                      fontWeight: "bold",
-                      marginBottom: "0.5rem",
-                      ...(item.color === 'green' ? { color: "#22c55e" } :
-                          item.color === 'orange' ? { color: "#fbbf24" } :
-                          item.color === 'red' ? { color: "#ef4444" } :
-                          { color: "#9ca3af" })
-                    }}>
-                      {item.range}
+                  {isCalculating ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <div style={{
+                        width: "12px",
+                        height: "12px",
+                        border: "2px solid #fff",
+                        borderTop: "2px solid transparent",
+                        borderRadius: "50%",
+                        animation: "spin 1s linear infinite"
+                      }} />
+                      Calculating...
                     </div>
-                    
-                    <div style={{ fontSize: "0.875rem", color: "#d1d5db", marginBottom: "0.25rem" }}>
-                      Pending: {item.totalQuantity.toLocaleString()}
-                    </div>
-                    
-                    <div style={{
-                      fontSize: "1.125rem",
-                      fontWeight: "600",
-                      ...(item.color === 'green' ? { color: "#86efac" } :
-                          item.color === 'orange' ? { color: "#fde68a" } :
-                          item.color === 'red' ? { color: "#fca5a5" } :
-                          { color: "#d1d5db" })
-                    }}>
-                      ETA: {item.estimatedDays === 0 ? 'N/A' : `${item.estimatedDays} day${item.estimatedDays === 1 ? '' : 's'}`}
-                    </div>
-                    
-                    {item.estimatedDays > 0 && (
-                      <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: "0.25rem" }}>
-                        {totalWeeklyCapacity > 0 ? `Based on ${totalWeeklyCapacity.toLocaleString()} weekly capacity` : 'No active vehicles'}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+                  ) : (
+                    "⚡ Calculate Delivery Dates"
+                  )}
+                </Button>
+              </div>
+            )}
             
             {totalWeeklyCapacity === 0 && (
               <div style={{
@@ -415,6 +755,54 @@ const PendingOrders = ({ onBack }) => {
             )}
           </div>
 
+
+          {/* Region Utilization */}
+          {Object.keys(summaryData.regionUtilization).length > 0 && (
+            <div style={{
+              background: "rgba(20,20,22,0.6)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "16px",
+              padding: "1.5rem",
+              marginBottom: "2rem",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.1)"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: "1rem" }}>
+                <span style={{ fontSize: "1.5rem", marginRight: "0.5rem" }}>📍</span>
+                <h2 style={{ color: "#fff", fontWeight: "600", margin: 0, fontSize: "1.25rem" }}>
+                  Region Distribution
+                </h2>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Object.entries(summaryData.regionUtilization).map(([region, data]) => (
+                  <div key={region} style={{
+                    background: "rgba(55,65,81,0.5)",
+                    borderRadius: "12px",
+                    padding: "1rem",
+                    border: "1px solid rgba(255,255,255,0.1)"
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                      <span style={{ fontWeight: "600", color: "#fff" }}>{region}</span>
+                      <span style={{
+                        background: "rgba(59,130,246,0.2)",
+                        color: "#60a5fa",
+                        padding: "0.25rem 0.5rem",
+                        borderRadius: "6px",
+                        fontSize: "0.75rem",
+                        fontWeight: "500"
+                      }}>
+                        {data.count} orders
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "0.875rem", color: "#9ca3af" }}>
+                      Total Quantity: {data.quantity.toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Vehicle Utilization */}
           {Object.keys(summaryData.vehicleUtilization).length > 0 && (
             <div style={{
@@ -428,7 +816,7 @@ const PendingOrders = ({ onBack }) => {
               <div style={{ display: "flex", alignItems: "center", marginBottom: "1rem" }}>
                 <span style={{ fontSize: "1.5rem", marginRight: "0.5rem" }}>🚛</span>
                 <h2 style={{ color: "#fff", fontWeight: "600", margin: 0, fontSize: "1.25rem" }}>
-                  Vehicle Utilization
+                  Vehicle Assignment & Utilization
                 </h2>
               </div>
               
@@ -453,6 +841,9 @@ const PendingOrders = ({ onBack }) => {
                         {data.count} orders
                       </span>
                     </div>
+                    <div style={{ fontSize: "0.875rem", color: "#9ca3af", marginBottom: "0.25rem" }}>
+                      Type: {data.type}
+                    </div>
                     <div style={{ fontSize: "0.875rem", color: "#9ca3af" }}>
                       Total Quantity: {data.quantity.toLocaleString()}
                     </div>
@@ -473,7 +864,7 @@ const PendingOrders = ({ onBack }) => {
             <div style={{ display: "flex", alignItems: "center", marginBottom: "1rem" }}>
               <span style={{ fontSize: "1.5rem", marginRight: "0.5rem" }}>📋</span>
               <h2 style={{ color: "#fff", fontWeight: "600", margin: 0, fontSize: "1.25rem" }}>
-                Pending Orders
+                Orders with Pending Quantities
               </h2>
             </div>
             
@@ -481,10 +872,10 @@ const PendingOrders = ({ onBack }) => {
               <div style={{ textAlign: "center", padding: "3rem 1rem" }}>
                 <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>📭</div>
                 <h3 style={{ color: "#fff", marginBottom: "0.5rem", fontSize: "1.25rem" }}>
-                  No Pending Orders Found
+                  No Orders Found
                 </h3>
                 <p style={{ color: "#9ca3af", marginBottom: "1.5rem" }}>
-                  {searchText ? "No orders match your search criteria" : "No orders are currently pending"}
+                  {searchText ? "No orders match your search criteria" : "No orders have pending quantities"}
                 </p>
                 {searchText && (
                   <Button
@@ -495,6 +886,54 @@ const PendingOrders = ({ onBack }) => {
                     Clear Search
                   </Button>
                 )}
+              </div>
+            ) : schedulingData.assignedOrders.length === 0 ? (
+              <div style={{
+                textAlign: "center",
+                padding: "3rem 1rem",
+                background: "rgba(55,65,81,0.3)",
+                borderRadius: "12px",
+                border: "2px dashed rgba(255,255,255,0.2)"
+              }}>
+                <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>📅</div>
+                <h3 style={{ color: "#fff", marginBottom: "0.5rem", fontSize: "1.25rem" }}>
+                  No Delivery Dates Calculated
+                </h3>
+                <p style={{ color: "#9ca3af", marginBottom: "1.5rem", fontSize: "0.875rem" }}>
+                  Click the "Calculate Delivery Dates" button to assign vehicles and calculate estimated delivery dates
+                </p>
+                <Button
+                  onClick={handleCalculateDeliveryDates}
+                  disabled={isCalculating || pendingOrders.length === 0 || vehicles.length === 0}
+                  variant="primary"
+                  style={{
+                    background: "linear-gradient(135deg, #0A84FF, #0066CC)",
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "0.75rem 1.5rem",
+                    color: "#fff",
+                    fontWeight: "600",
+                    fontSize: "0.875rem",
+                    cursor: pendingOrders.length === 0 || vehicles.length === 0 ? "not-allowed" : "pointer",
+                    opacity: pendingOrders.length === 0 || vehicles.length === 0 ? 0.5 : 1
+                  }}
+                >
+                  {isCalculating ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <div style={{
+                        width: "12px",
+                        height: "12px",
+                        border: "2px solid #fff",
+                        borderTop: "2px solid transparent",
+                        borderRadius: "50%",
+                        animation: "spin 1s linear infinite"
+                      }} />
+                      Calculating...
+                    </div>
+                  ) : (
+                    "⚡ Calculate Delivery Dates"
+                  )}
+                </Button>
               </div>
             ) : (
               <div style={{ overflow: "auto" }}>

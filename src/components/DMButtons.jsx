@@ -14,7 +14,6 @@ export default function DMButtons({ order, onActionLoading }) {
   const [dmInfo, setDmInfo] = useState(null);
   const [loading, setLoading] = useState(false);
   const [justGenerated, setJustGenerated] = useState(false);
-  const mounted = useRef(true);
 
   useEffect(() => {
     const detectClientDuplicates = async () => {
@@ -27,22 +26,23 @@ export default function DMButtons({ order, onActionLoading }) {
         where("orgID", "==", order.orgID)
       );
       const snap = await getDocs(q);
-      if (snap.size > 1 && process.env.NODE_ENV === 'development') {
-        console.warn(`Multiple orders found for ${order.clientName} on ${order.deliveryDate}`);
-      }
+      // Multiple orders for same person/vehicle/day are now expected and supported
+      // No logging needed
     };
     detectClientDuplicates();
   }, [order]);
 
   useEffect(() => {
     const fetchDM = async () => {
+      // Use defOrderID as primary identifier, fallback to docID/id
+      const orderIdentifier = order.defOrderID || order.docID || order.id;
+      
       const q = query(
         collection(db, "DELIVERY_MEMOS"),
-        where("orderID", "==", order.docID || order.id),
+        where("orderID", "==", orderIdentifier),
         where("status", "==", "active")
       );
       const snap = await getDocs(q);
-      if (!mounted.current) return;
       if (!snap.empty) {
         const activeDoc = snap.docs.find(doc => doc.data().status === "active");
         if (activeDoc) {
@@ -51,10 +51,7 @@ export default function DMButtons({ order, onActionLoading }) {
       }
     };
     fetchDM();
-    return () => {
-      mounted.current = false;
-    };
-  }, [order.docID, order.id]);
+  }, [order.defOrderID, order.docID, order.id]);
 
   const buttonStyleBase = {
     padding: "0.4rem 0.9rem",
@@ -69,8 +66,8 @@ export default function DMButtons({ order, onActionLoading }) {
   const handleGenerate = async () => {
     const actionId = `generate-${order.docID || order.id}`;
     
-    // Prevent multiple rapid clicks and ensure component is still mounted
-    if (loading || !mounted.current) return;
+    // Prevent multiple rapid clicks
+    if (loading) return;
     
     setLoading(true);
     if (onActionLoading) onActionLoading(actionId, true);
@@ -88,9 +85,10 @@ export default function DMButtons({ order, onActionLoading }) {
       }
 
       // Check if a DM already exists for this exact order
+      const orderIdentifier = order.defOrderID || order.docID || order.id;
       const checkQ = query(
         collection(db, "DELIVERY_MEMOS"),
-        where("orderID", "==", order.docID || order.id),
+        where("orderID", "==", orderIdentifier),
         where("status", "==", "active")
       );
       const existingSnap = await getDocs(checkQ);
@@ -116,7 +114,7 @@ export default function DMButtons({ order, onActionLoading }) {
       while (retries > 0) {
         const q = query(
           collection(db, "DELIVERY_MEMOS"),
-          where("orderID", "==", order.docID || order.id),
+          where("orderID", "==", orderIdentifier),
           where("status", "==", "active")
         );
         snap = await getDocs(q);
@@ -126,8 +124,6 @@ export default function DMButtons({ order, onActionLoading }) {
           await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
         }
       }
-      
-      if (!mounted.current) return;
       
       if (!snap.empty) {
         const dmDoc = snap.docs[0];
@@ -234,13 +230,13 @@ export default function DMButtons({ order, onActionLoading }) {
       
       // Force a re-fetch of DM status to ensure UI updates correctly
       setTimeout(async () => {
+        const orderIdentifier = order.defOrderID || order.docID || order.id;
         const q = query(
           collection(db, "DELIVERY_MEMOS"),
-          where("orderID", "==", order.docID || order.id),
+          where("orderID", "==", orderIdentifier),
           where("status", "==", "active")
         );
         const snap = await getDocs(q);
-        if (!mounted.current) return;
         if (snap.empty) {
           setDmInfo(null);
         } else {

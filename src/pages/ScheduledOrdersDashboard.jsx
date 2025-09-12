@@ -195,7 +195,6 @@ const setupRealTimeListener = useCallback((date) => {
     
     setDashboardState(prev => {
       const newReadCount = prev.dbReadCount + 1;
-      console.log(`📖 Database Read #${newReadCount}: Fetched ${ordersData.length} orders for date ${selectedDate}`);
       return {
         ...prev,
         orders: ordersData,
@@ -258,7 +257,7 @@ useEffect(() => {
     });
     
     return filtered;
-  }, [orders, selectedDate, selectedVehicle]);
+  }, [orders, selectedDate, selectedVehicle, formatDateKey]);
 
   // Sort filteredOrders: Pending first, then Dispatched, then Delivered
   const statusPriority = (o) => {
@@ -309,36 +308,55 @@ useEffect(() => {
     }
   }, [selectedVehicle, vehicles]);
 
-  // Deduplicate orders by clientName, vehicleNumber, and deliveryDate before rendering
+  // Deduplication: Only remove orders with identical docID (true database duplicates)
+  // This allows multiple orders with same defOrderID but different time slots to show
   const deduplicatedOrders = useMemo(() => {
     const uniqueOrdersMap = new Map();
+    
     sortedOrders.forEach(order => {
-      const key = `${order.clientName}-${order.vehicleNumber}-${formatDateKey(order.deliveryDate)}`;
-      if (!uniqueOrdersMap.has(key)) {
-        uniqueOrdersMap.set(key, order);
+      // Use docID as the unique key - this is the actual database document ID
+      const docID = order.docID || order.id;
+      
+      if (!uniqueOrdersMap.has(docID)) {
+        uniqueOrdersMap.set(docID, order);
       } else {
-        // If duplicate found, keep the one with the most recent data or DM number
-        const existing = uniqueOrdersMap.get(key);
-        if (order.dmNumber && !existing.dmNumber) {
-          // Prefer order with DM number
-          uniqueOrdersMap.set(key, order);
-        } else if (order.dmNumber === "Cancelled" && existing.dmNumber !== "Cancelled") {
-          // Prefer cancelled status
-          uniqueOrdersMap.set(key, order);
-        } else if (order.updatedAt && existing.updatedAt && order.updatedAt > existing.updatedAt) {
-          // Prefer more recently updated
-          uniqueOrdersMap.set(key, order);
+        // Only log if we find actual database duplicates (shouldn't happen)
+        if (process.env.NODE_ENV === 'development') {
         }
       }
     });
+    
     return Array.from(uniqueOrdersMap.values());
-  }, [sortedOrders, formatDateKey]);
+  }, [sortedOrders]);
+
+  // Use defOrderID for unique order identification with proper deduplication
+  const ordersWithUniqueKeys = useMemo(() => {
+    const result = deduplicatedOrders.map((order, index) => {
+      // Create a more robust unique key combining multiple identifiers
+      const baseKey = order.defOrderID || order.docID || order.id;
+      const timeKey = order.dispatchStart?.seconds || order.deliveryDate?.seconds || index;
+      const productKey = order.productName ? order.productName.substring(0, 10) : '';
+      const quantityKey = order.productQuant || 0;
+      
+      // Combine multiple factors to ensure uniqueness even with same time slots
+      const uniqueKey = baseKey 
+        ? `${baseKey}-${timeKey}-${productKey}-${quantityKey}` 
+        : `order-${index}-${productKey}`;
+      
+      return {
+        ...order,
+        uniqueKey
+      };
+    });
+    
+    return result;
+  }, [deduplicatedOrders]);
   
-  // Setup card animations after deduplicatedOrders is defined
+  // Setup card animations after ordersWithUniqueKeys is defined
   useEffect(() => {
     const cleanup = setupCardAnimations();
     return cleanup;
-  }, [deduplicatedOrders.length, setupCardAnimations]);
+  }, [ordersWithUniqueKeys.length, setupCardAnimations]);
 
   return (
     <ErrorBoundary>
@@ -450,7 +468,7 @@ useEffect(() => {
           Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="card-surface loading-skeleton" />
           ))
-        ) : deduplicatedOrders.length === 0 ? (
+        ) : ordersWithUniqueKeys.length === 0 ? (
           <div style={{ 
             gridColumn: '1 / -1', 
             textAlign: 'center', 
@@ -470,9 +488,9 @@ useEffect(() => {
           </div>
         ) : (
           <>
-            {deduplicatedOrders.map((o, idx) => (
+            {ordersWithUniqueKeys.map((o, idx) => (
               <OrderCard 
-                key={`${o.docID || o.id || o.defOrderID || idx}-${o.clientName}-${o.vehicleNumber}-${o.deliveryDate?.seconds || o.deliveryDate}`}
+                key={o.uniqueKey}
                 order={o}
                 formatTime={formatTime}
                 actionLoading={actionLoading}
@@ -500,6 +518,7 @@ const OrderCard = memo(({ order: o, formatTime, actionLoading, setActionLoading,
   }
   
   const paymentLabel = !o.paymentStatus ? (o.paySchedule === "POD" ? "Pay on Delivery" : o.paySchedule === "PL" ? "Pay Later" : o.paySchedule) : o.toAccount || "—";
+  
 
   return (
     <div className={`order-card sch-card ${cardStatusClass}`}>
@@ -578,7 +597,6 @@ const OrderCard = memo(({ order: o, formatTime, actionLoading, setActionLoading,
                     where("orgID", "==", orgId),
                     where("status", "==", "active")
                   );
-                  console.log(`📖 Database Read: Validating DM #${o.dmNumber} for print`);
                   const snapshot = await getDocs(dmQuery);
                   
                   if (snapshot.empty) {
@@ -623,7 +641,6 @@ const OrderCard = memo(({ order: o, formatTime, actionLoading, setActionLoading,
                       where("status", "==", "active")
                     );
 
-                    console.log(`📖 Database Read: Validating DM #${o.dmNumber} for cancellation`);
                     const snapshot = await getDocs(dmQuery);
                     if (snapshot.empty) {
                       alert("Delivery Memo not found or has already been cancelled.");

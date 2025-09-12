@@ -251,7 +251,7 @@ const VehicleModal = ({
                 </label>
                 <SelectField
                   value={formData.type}
-                  onChange={(e) => handleInputChange('type', e.target.value)}
+                  onChange={(value) => handleInputChange('type', value)}
                   options={[
                     { value: "", label: "Select Type" },
                     { value: "Tractor", label: "Tractor" },
@@ -287,7 +287,7 @@ const VehicleModal = ({
                 </label>
                 <SelectField
                   value={formData.meterType}
-                  onChange={(e) => handleInputChange('meterType', e.target.value)}
+                  onChange={(value) => handleInputChange('meterType', value)}
                   options={[
                     { value: "", label: "Select Meter Type" },
                     { value: "Hours", label: "Hours" },
@@ -348,7 +348,7 @@ const VehicleModal = ({
                 </label>
                 <SelectField
                   value={formData.status}
-                  onChange={(e) => handleInputChange('status', e.target.value)}
+                  onChange={(value) => handleInputChange('status', value)}
                   options={[
                     { value: "Active", label: "Active" },
                     { value: "Inactive", label: "Inactive" },
@@ -510,3 +510,4 @@ const VehicleModal = ({
 };
 
 export default VehicleModal;
+

@@ -9,10 +9,10 @@ import {
   } from "firebase/firestore";
   import { db } from "../config/firebase";
   
-  export async function generateDeliveryMemo(order) {
-    try {
-      const dmCounterRef = doc(db, "DM_GENERATOR", `org_${order.orgID}`);
-      const dmSnap = await getDoc(dmCounterRef);
+export async function generateDeliveryMemo(order) {
+  try {
+    const dmCounterRef = doc(db, "DM_GENERATOR", `org_${order.orgID}`);
+    const dmSnap = await getDoc(dmCounterRef);
   
       let nextDM = 1000;
       if (dmSnap.exists()) {
@@ -25,7 +25,7 @@ import {
       const memoRef = doc(collection(db, "DELIVERY_MEMOS"));
       const dmData = {
         dmNumber: nextDM,
-        orderID: order.docID || order.id,
+        orderID: order.defOrderID || order.docID || order.id,
         clientID: order.clientID,
         clientName: order.clientName,
         vehicleNumber: order.vehicleNumber,

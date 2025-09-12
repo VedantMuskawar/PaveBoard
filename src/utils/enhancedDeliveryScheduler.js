@@ -289,25 +289,19 @@ export const assignOrdersToVehicles = (virtualOrders, vehicles, startDate) => {
  * Calculate quantity threshold statistics
  * @param {Array} assignedOrders - Orders with assigned vehicles
  * @param {Array} vehicles - Array of active vehicles
- * @param {Array} thresholds - Quantity thresholds [1500, 2500, 3000, 4000]
+ * @param {Array} thresholds - Quantity thresholds [1000, 1500, 2000, 2500, 3000, 4000]
  * @param {Date} startDate - Starting date (tomorrow)
  * @returns {Array} Threshold statistics
  */
-export const calculateQuantityThresholdStats = (assignedOrders, vehicles, thresholds = [1500, 2500, 3000, 4000], startDate = new Date()) => {
+export const calculateQuantityThresholdStats = (assignedOrders, vehicles, thresholds = [1000, 1500, 2000, 2500, 3000, 4000], startDate = new Date()) => {
   // Calculate total weekly capacity
   const totalWeeklyCapacity = vehicles.reduce((total, vehicle) => {
     if (!vehicle.weeklyCapacity) return total;
     return total + Object.values(vehicle.weeklyCapacity).reduce((sum, cap) => sum + (cap || 0), 0);
   }, 0);
 
-  console.log('📊 Calculating threshold stats:', {
-    totalOrders: assignedOrders.length,
-    totalWeeklyCapacity,
-    thresholds
-  });
 
   if (totalWeeklyCapacity === 0) {
-    console.log('❌ No weekly capacity available');
     return thresholds.map(threshold => ({
       range: `≤${threshold.toLocaleString()}`,
       totalQuantity: 0,
@@ -327,12 +321,7 @@ export const calculateQuantityThresholdStats = (assignedOrders, vehicles, thresh
     };
   });
 
-  // Add overflow group for orders > max threshold
-  const maxThreshold = Math.max(...thresholds);
-  thresholdGroups[`>${maxThreshold}`] = {
-    orders: [],
-    totalQuantity: 0
-  };
+  // No overflow group needed since max order is 4000 bricks
 
   // Categorize orders
   assignedOrders.forEach(order => {
@@ -351,10 +340,9 @@ export const calculateQuantityThresholdStats = (assignedOrders, vehicles, thresh
       }
     }
 
-    // If no threshold matched, add to overflow
+    // If no threshold matched, skip the order (shouldn't happen since max is 4000)
     if (!assigned) {
-      thresholdGroups[`>${maxThreshold}`].orders.push(order);
-      thresholdGroups[`>${maxThreshold}`].totalQuantity += quantity;
+      // Order exceeds maximum threshold 4000
     }
   });
 
@@ -366,8 +354,27 @@ export const calculateQuantityThresholdStats = (assignedOrders, vehicles, thresh
     const group = thresholdGroups[threshold];
     const totalQuantity = group.totalQuantity;
     const orderCount = group.orders.length;
-    // FIXED: Calculate ETA based on order count, not quantity
-    const estimatedDays = orderCount > 0 ? Math.ceil(orderCount / totalWeeklyCapacity) : 0;
+    
+    // Calculate suitable vehicles for this threshold
+    const suitableVehicles = vehicles.filter(vehicle => {
+      const vehicleQuantity = parseInt(vehicle.vehicleQuantity) || 0;
+      return vehicleQuantity === threshold;
+    });
+    
+    // Calculate total daily capacity of all suitable vehicles
+    const totalDailyCapacity = suitableVehicles.reduce((total, vehicle) => {
+      if (!vehicle.weeklyCapacity) return total;
+      // Use maximum daily capacity instead of average for more realistic ETA
+      const maxDailyCapacity = Math.max(...Object.values(vehicle.weeklyCapacity));
+      return total + maxDailyCapacity;
+    }, 0);
+    
+    // ETA = X ÷ Total Daily Capacity
+    // X = orderCount (number of orders)
+    // Total Daily Capacity = sum of all vehicles' maximum daily capacity
+    const estimatedDays = orderCount > 0 && totalDailyCapacity > 0 
+      ? Math.ceil(orderCount / totalDailyCapacity) 
+      : 0;
     
     // Determine color based on ETA
     let color = 'gray';
@@ -381,12 +388,6 @@ export const calculateQuantityThresholdStats = (assignedOrders, vehicles, thresh
       }
     }
 
-    console.log(`📈 Threshold ${threshold}:`, {
-      orderCount,
-      totalQuantity,
-      estimatedDays,
-      color
-    });
 
     results.push({
       range: `≤${threshold.toLocaleString()}`,
@@ -398,41 +399,8 @@ export const calculateQuantityThresholdStats = (assignedOrders, vehicles, thresh
     });
   });
 
-  // Process overflow group
-  const overflowGroup = thresholdGroups[`>${maxThreshold}`];
-  const overflowQuantity = overflowGroup.totalQuantity;
-  const overflowOrderCount = overflowGroup.orders.length;
-  // FIXED: Calculate ETA based on order count, not quantity
-  const overflowDays = overflowOrderCount > 0 ? Math.ceil(overflowOrderCount / totalWeeklyCapacity) : 0;
-  
-  let overflowColor = 'gray';
-  if (overflowDays > 0) {
-    if (overflowDays < 3) {
-      overflowColor = 'green';
-    } else if (overflowDays <= 7) {
-      overflowColor = 'orange';
-    } else {
-      overflowColor = 'red';
-    }
-  }
+  // No overflow group processing needed since max order is 4000 bricks
 
-  console.log(`📈 Overflow >${maxThreshold}:`, {
-    orderCount: overflowOrderCount,
-    totalQuantity: overflowQuantity,
-    estimatedDays: overflowDays,
-    color: overflowColor
-  });
-
-  results.push({
-    range: `>${maxThreshold.toLocaleString()}`,
-    totalQuantity: overflowQuantity,
-    estimatedDays: overflowDays,
-    color: overflowColor,
-    threshold: maxThreshold + 1,
-    orderCount: overflowOrderCount
-  });
-
-  console.log('📊 Final threshold stats:', results);
   return results;
 };
 
@@ -476,7 +444,7 @@ export const scheduleDeliveries = (orders, vehicles, startDate = null) => {
   console.log('📅 Delivery date distribution:', deliveryDates);
 
   // Step 3: Calculate quantity threshold statistics
-  const thresholdStats = calculateQuantityThresholdStats(assignedOrders, vehicles, [1500, 2500, 3000, 4000], tomorrow);
+  const thresholdStats = calculateQuantityThresholdStats(assignedOrders, vehicles, [1000, 1500, 2000, 2500, 3000, 4000], tomorrow);
 
   // Step 4: Calculate total weekly capacity
   const totalWeeklyCapacity = vehicles.reduce((total, vehicle) => {

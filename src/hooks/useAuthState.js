@@ -15,17 +15,17 @@ export const useAuthState = () => {
   
   const { user } = useAuth();
 
-  // Determine user role based on membership data and fallbacks
+  // Determine user role based on membership data from database
   const determineUserRole = useCallback((memberData, user) => {
+    // Role determination based on database values only
     const isAdminUser = memberData?.role === 'admin' || 
                        memberData?.role === 'Admin' ||
-                       memberData?.phoneNumber === '+919876543210' || // Admin phone number
-                       user?.email === 'vedantreddymuskawar@gmail.com'; // Fallback to email
+                       memberData?.role === 0; // Role 0 = Admin in database
     
     const isManagerUser = memberData?.role === 'manager' || 
                          memberData?.role === 'Manager' ||
-                         memberData?.phoneNumber === '+919876543211' || // Manager phone number
-                         user?.email === 'manager@paveboard.com'; // Fallback to email
+                         memberData?.role === 1; // Role 1 = Manager in database
+    
     
     return { isAdminUser, isManagerUser };
   }, []);

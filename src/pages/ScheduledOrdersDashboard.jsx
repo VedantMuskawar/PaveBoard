@@ -352,6 +352,7 @@ useEffect(() => {
     return result;
   }, [deduplicatedOrders]);
   
+  
   // Setup card animations after ordersWithUniqueKeys is defined
   useEffect(() => {
     const cleanup = setupCardAnimations();

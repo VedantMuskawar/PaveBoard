@@ -66,7 +66,7 @@ const PendingOrders = ({ onBack }) => {
   const [showDebugInfo, setShowDebugInfo] = useState(false);
 
   // Configurable quantity thresholds
-  const QUANTITY_THRESHOLDS = [1500, 2500, 3000, 4000];
+  const QUANTITY_THRESHOLDS = [1000, 1500, 2000, 2500, 3000, 4000];
 
   // Fetch pending orders with real-time updates
   useEffect(() => {
@@ -142,18 +142,41 @@ const PendingOrders = ({ onBack }) => {
     return () => unsubscribe();
   }, [selectedOrg?.orgID]);
 
-  // Filter orders based on search text
+  // Filter and sort orders based on search text and delivery dates
   const filteredOrders = useMemo(() => {
-    if (!searchText) return schedulingData.assignedOrders;
+    let orders = schedulingData.assignedOrders;
     
-    return schedulingData.assignedOrders.filter(order => {
-      const searchLower = searchText.toLowerCase();
-      return (
-        order.clientName?.toLowerCase().includes(searchLower) ||
-        order.productName?.toLowerCase().includes(searchLower) ||
-        order.regionName?.toLowerCase().includes(searchLower) ||
-        order.vehicleNo?.toLowerCase().includes(searchLower)
-      );
+    // Apply search filter if search text exists
+    if (searchText) {
+      orders = orders.filter(order => {
+        const searchLower = searchText.toLowerCase();
+        return (
+          order.clientName?.toLowerCase().includes(searchLower) ||
+          order.productName?.toLowerCase().includes(searchLower) ||
+          order.regionName?.toLowerCase().includes(searchLower) ||
+          order.vehicleNo?.toLowerCase().includes(searchLower)
+        );
+      });
+    }
+    
+    // Sort by estimated delivery date if available
+    return orders.sort((a, b) => {
+      const dateA = a.estimatedDeliveryDate;
+      const dateB = b.estimatedDeliveryDate;
+      
+      // If both have delivery dates, sort by date
+      if (dateA && dateB) {
+        const timeA = dateA instanceof Date ? dateA.getTime() : new Date(dateA).getTime();
+        const timeB = dateB instanceof Date ? dateB.getTime() : new Date(dateB).getTime();
+        return timeA - timeB;
+      }
+      
+      // If only one has delivery date, prioritize it
+      if (dateA && !dateB) return -1;
+      if (!dateA && dateB) return 1;
+      
+      // If neither has delivery date, maintain original order
+      return 0;
     });
   }, [schedulingData.assignedOrders, searchText]);
 
@@ -336,6 +359,30 @@ const PendingOrders = ({ onBack }) => {
           {row.orderCount || 0}
         </Badge>
       )
+    },
+    {
+      key: 'createdTime',
+      header: 'Created Time',
+      align: 'center',
+      icon: '🕒',
+      render: (row) => {
+        if (!row.createdTime) return 'N/A';
+        try {
+          const date = row.createdTime.toDate ? row.createdTime.toDate() : new Date(row.createdTime.seconds * 1000);
+          return (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '0.875rem', color: '#fff' }}>
+                {date.toLocaleDateString()}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
+                {date.toLocaleTimeString()}
+              </div>
+            </div>
+          );
+        } catch (error) {
+          return 'Invalid Date';
+        }
+      }
     }
   ], []);
 

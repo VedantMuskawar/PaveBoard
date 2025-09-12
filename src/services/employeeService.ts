@@ -111,18 +111,43 @@ export class EmployeeService {
         throw new Error("Employee not found");
       }
 
-      // Found employee with account relationship
-
-      // If employee has an account, remove them from the account first
+      // If employee has an account, handle account cleanup
       if (employee.accountId) {
-        // Removing employee from account
-        await this.removeMemberFromAccount(employee.accountId, employeeId);
-        // Employee removed from account successfully
+        await runTransaction(db, async (transaction: Transaction) => {
+          // Update account member list and recalculate balance
+          const accountRef = doc(db, this.ACCOUNTS_COLLECTION, employee.accountId);
+          const accountDoc = await transaction.get(accountRef);
+          
+          if (accountDoc.exists()) {
+            const currentMembers = accountDoc.data().memberIds || [];
+            const updatedMembers = currentMembers.filter((id: string) => id !== employeeId);
+            
+            // If no members left, delete the account
+            if (updatedMembers.length === 0) {
+              transaction.delete(accountRef);
+              // Account deleted as it has no remaining members
+            } else {
+              // Calculate new combined balances
+              const newBalance = await this.calculateAccountBalance(updatedMembers);
+              const newOpeningBalance = await this.calculateAccountOpeningBalance(updatedMembers);
+              
+              transaction.update(accountRef, {
+                memberIds: updatedMembers,
+                currentBalance: newBalance,
+                openingBalance: newOpeningBalance,
+                updatedAt: serverTimestamp()
+              });
+            }
+          }
+          
+          // Delete the employee document
+          const employeeRef = doc(db, this.EMPLOYEES_COLLECTION, employeeId);
+          transaction.delete(employeeRef);
+        });
+      } else {
+        // No account, just delete the employee
+        await deleteDoc(doc(db, this.EMPLOYEES_COLLECTION, employeeId));
       }
-
-      // Delete the employee document
-      // Deleting employee document from database
-      await deleteDoc(doc(db, this.EMPLOYEES_COLLECTION, employeeId));
 
       // Employee deleted successfully
     } catch (error) {

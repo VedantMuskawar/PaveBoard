@@ -112,9 +112,7 @@ const EmployeeForm = ({ employee, onClose, onSave, orgID, createdBy }) => {
       newErrors.salaryValue = 'Salary value cannot be negative';
     }
 
-    if (formData.openingBalance < 0) {
-      newErrors.openingBalance = 'Opening balance cannot be negative';
-    }
+    // Opening balance can be negative (debt/advance)
 
     if (!formData.dateJoined) {
       newErrors.dateJoined = 'Date joined is required';
@@ -404,17 +402,16 @@ const EmployeeForm = ({ employee, onClose, onSave, orgID, createdBy }) => {
             </label>
             <Input
               type="number"
-              min="0"
               step="0.01"
               value={formData.openingBalance}
               onChange={(e) => handleInputChange('openingBalance', parseFloat(e.target.value) || 0)}
-              placeholder="Enter opening balance"
+              placeholder="Enter opening balance (can be negative)"
               error={errors.openingBalance}
               disabled={!isOpeningBalanceEditable}
             />
             <p className="mt-2 text-sm text-gray-500">
-              This is the initial balance assigned to the employee. Current balance will be calculated as: 
-              Opening Balance + Wages - Payments
+              This is the initial balance assigned to the employee. Can be negative for advance payments or debt. 
+              Current balance will be calculated as: Opening Balance + Wages - Payments
             </p>
           </div>
         </Card>

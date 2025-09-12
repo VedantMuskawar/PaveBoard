@@ -1,12 +1,18 @@
 export interface WageEntry {
   id: string;
   orgID: string;
-  employeeId: string;
-  employeeName: string;
-  category: "Salary" | "Trip" | "Batch" | "Bonus";
+  labourID: string;
+  labourName: string;
+  category: "Salary" | "Trip" | "Batch" | "Bonus" | "Weekly Wages";
   date: Date;
   wageAmount: number; // in paise
   createdAt: Date;
+  // Weekly compilation fields
+  weekLabel?: string;
+  originalEntries?: WageEntry[];
+  // Legacy fields for backward compatibility
+  employeeId?: string;
+  employeeName?: string;
 }
 
 export interface Payment {

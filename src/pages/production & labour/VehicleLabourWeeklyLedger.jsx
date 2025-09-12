@@ -25,7 +25,7 @@ import React, { useEffect, useState } from "react";
 import { collection, getDocs, query, where, deleteDoc, doc, updateDoc, getDoc } from "firebase/firestore";
 import { Timestamp } from "firebase/firestore"; // For Firestore timestamp queries
 import { db } from "../../config/firebase";
-import html2pdf from 'html2pdf.js';
+// import html2pdf from 'html2pdf.js'; // Temporarily disabled due to import error
 import * as XLSX from "xlsx";
 import { useNavigate } from "react-router-dom";
 import { useOrganization } from "../../contexts/OrganizationContext";
@@ -223,17 +223,18 @@ const VLabourLedger = ({ onBack }) => {
     fetchDMs();
   }, [selectedDate, endDate]);
 
-  // Print PDF handler using html2pdf.js
+  // Print PDF handler using html2pdf.js - Temporarily disabled due to import error
   const handlePrintPDF = () => {
-    const element = document.getElementById('printable-ledger');
-    const opt = {
-      margin: 0.5,
-      filename: `VehicleLabourLedger_${new Date().toISOString().split("T")[0]}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, scrollY: 0 },
-      jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' }
-    };
-    html2pdf().set(opt).from(element).save();
+    alert('PDF export is temporarily disabled due to technical issues. Please use Excel export instead.');
+    // const element = document.getElementById('printable-ledger');
+    // const opt = {
+    //   margin: 0.5,
+    //   filename: `VehicleLabourLedger_${new Date().toISOString().split("T")[0]}.pdf`,
+    //   image: { type: 'jpeg', quality: 0.98 },
+    //   html2canvas: { scale: 2, scrollY: 0 },
+    //   jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' }
+    // };
+    // html2pdf().set(opt).from(element).save();
   };
 
   // Export Excel handler using xlsx
@@ -330,7 +331,7 @@ const VLabourLedger = ({ onBack }) => {
                   <th className="sticky-col" colSpan={3}>Balance →</th>
                   {visibleLabours.map((labour, index) => (
                     <th key={index} className="table-cell balance">
-                      ₹{(labour.currentBalance || 0).toLocaleString()}
+                      ₹{((labour.currentBalance || 0) / 100).toLocaleString()}
                     </th>
                   ))}
                 </tr>
@@ -410,11 +411,11 @@ const VLabourLedger = ({ onBack }) => {
                             entry.labourID === labour.labourID
                         );
                         const totalWage = matchingEntries.reduce((sum, entry) => sum + (Number(entry.wageAmount) || 0), 0);
-                        return (
-                          <td key={labour.labourID}>
-                            {totalWage > 0 ? totalWage.toFixed(0) : 0}
-                          </td>
-                        );
+                          return (
+                            <td key={labour.labourID}>
+                             {totalWage > 0 ? `₹${(totalWage / 100).toLocaleString()}` : '₹0'}
+                            </td>
+                          );
                       });
                       const paymentTotals = visibleLabours.map(labour => {
                         const total = labourPayments
@@ -428,7 +429,7 @@ const VLabourLedger = ({ onBack }) => {
                             })()
                           )
                           .reduce((sum, p) => sum + (p.paymentAmount || 0), 0);
-                        return total;
+                        return total > 0 ? `₹${(total / 100).toLocaleString()}` : '₹0';
                       });
                       // Row hover effect
                       let trProps = {};
@@ -566,7 +567,7 @@ const VLabourLedger = ({ onBack }) => {
                                   textAlign: "center"
                                 }}
                               >
-                                {bal}
+                                ₹{(bal / 100).toLocaleString()}
                               </td>
                             ))}
                           </tr>
@@ -605,7 +606,7 @@ const VLabourLedger = ({ onBack }) => {
                   <td className="sticky-col" style={{ left: "120px" }}></td>
                   <td className="sticky-col" style={{ left: "240px" }}></td>
                   {visibleLabours.map((labour, index) => (
-                    <td key={index}>{labour.openingBalance || 0}</td>
+                    <td key={index}>₹{((labour.openingBalance || 0) / 100).toLocaleString()}</td>
                   ))}
                 </tr>
               </tfoot>

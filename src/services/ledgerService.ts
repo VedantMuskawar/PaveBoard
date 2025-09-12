@@ -33,6 +33,86 @@ export class LedgerService {
   private static searchCache = new Map<string, { results: LedgerSearchResult[], timestamp: number }>();
   private static readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
+  // Helper function to get week boundaries (Thursday to Wednesday)
+  private static getWeekBoundaries(date: Date): { weekStart: Date, weekEnd: Date, weekLabel: string } {
+    const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+    const thursday = 4; // Thursday is day 4
+    
+    // Calculate days to subtract to get to Thursday of current week
+    const daysToSubtract = (dayOfWeek + 7 - thursday) % 7;
+    
+    const weekStart = new Date(date);
+    weekStart.setDate(date.getDate() - daysToSubtract);
+    weekStart.setHours(0, 0, 0, 0);
+    
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6); // Wednesday (6 days after Thursday)
+    weekEnd.setHours(23, 59, 59, 999);
+    
+    // Create week label (e.g., "Week of Thu, 10 Sep 2025")
+    const weekLabel = `Week of ${weekStart.toLocaleDateString('en-GB', { 
+      weekday: 'short', 
+      day: '2-digit', 
+      month: 'short', 
+      year: 'numeric' 
+    })}`;
+    
+    return { weekStart, weekEnd, weekLabel };
+  }
+
+  // Helper function to compile wage entries into weekly periods
+  private static compileWageEntriesWeekly(wageEntries: WageEntry[]): WageEntry[] {
+    const weeklyMap = new Map<string, {
+      weekStart: Date,
+      weekEnd: Date,
+      weekLabel: string,
+      entries: WageEntry[],
+      totalAmount: number
+    }>();
+
+    // Group wage entries by week
+    wageEntries.forEach(wage => {
+      const { weekStart, weekEnd, weekLabel } = this.getWeekBoundaries(wage.date);
+      const weekKey = `${weekStart.getTime()}-${weekEnd.getTime()}`;
+      
+      if (!weeklyMap.has(weekKey)) {
+        weeklyMap.set(weekKey, {
+          weekStart,
+          weekEnd,
+          weekLabel,
+          entries: [],
+          totalAmount: 0
+        });
+      }
+      
+      const weekData = weeklyMap.get(weekKey)!;
+      weekData.entries.push(wage);
+      weekData.totalAmount += wage.wageAmount;
+    });
+
+    // Create compiled weekly entries
+    const compiledEntries: WageEntry[] = [];
+    weeklyMap.forEach((weekData, weekKey) => {
+      if (weekData.entries.length > 0) {
+        // Use the first entry as base and modify it
+        const baseEntry = weekData.entries[0];
+        compiledEntries.push({
+          ...baseEntry,
+          id: `weekly-${weekKey}`,
+          wageAmount: weekData.totalAmount,
+          category: 'Weekly Wages' as any,
+          labourName: `${baseEntry.labourName} (${weekData.entries.length} days)`,
+          date: weekData.weekEnd, // Use end of week as the date
+          weekLabel: weekData.weekLabel,
+          originalEntries: weekData.entries // Keep reference to original entries
+        } as any);
+      }
+    });
+
+    // Sort by week end date
+    return compiledEntries.sort((a, b) => a.date.getTime() - b.date.getTime());
+  }
+
   // Search for employees and accounts with optimized queries and caching
   static async searchEmployeesAndAccounts(orgID: string, searchTerm: string): Promise<LedgerSearchResult[]> {
     try {
@@ -271,16 +351,19 @@ export class LedgerService {
       const wagesQuery = query(
         collection(db, this.WAGES_COLLECTION),
         where("orgID", "==", orgID),
-        where("employeeId", "==", employeeId)
+        where("labourID", "==", employee.labourID)
       );
 
       const wagesSnapshot = await getDocs(wagesQuery);
-      const wageEntries: WageEntry[] = wagesSnapshot.docs.map(doc => ({
+      const rawWageEntries: WageEntry[] = wagesSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
         date: doc.data().date?.toDate() || new Date(),
         createdAt: doc.data().createdAt?.toDate() || new Date()
       })) as WageEntry[];
+
+      // Compile wage entries into weekly periods
+      const wageEntries = this.compileWageEntriesWeekly(rawWageEntries);
 
       // Get payments (debits) where this employee is allocated
       const paymentsQuery = query(
@@ -316,11 +399,15 @@ export class LedgerService {
 
       // Add wage entries (credits)
       wageEntries.forEach(wage => {
+        const description = wage.category === 'Weekly Wages' && wage.weekLabel
+          ? `${wage.category} - ${wage.labourName} (${wage.weekLabel})`
+          : `${wage.category} - ${wage.labourName}`;
+          
         entries.push({
           id: `wage-${wage.id}`,
           date: wage.date,
           type: 'credit',
-          description: `${wage.category} - ${wage.employeeName}`,
+          description: description,
           amount: wage.wageAmount,
           runningBalance: 0, // Will be calculated later
           referenceId: wage.id,
@@ -456,19 +543,23 @@ export class LedgerService {
       );
 
       // Get wage entries for all members
+      const memberLabourIDs = members.map(member => member.labourID).filter(Boolean);
       const wagesQuery = query(
         collection(db, this.WAGES_COLLECTION),
         where("orgID", "==", orgID),
-        where("employeeId", "in", account.memberIds)
+        where("labourID", "in", memberLabourIDs)
       );
 
       const wagesSnapshot = await getDocs(wagesQuery);
-      const wageEntries: WageEntry[] = wagesSnapshot.docs.map(doc => ({
+      const rawWageEntries: WageEntry[] = wagesSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
         date: doc.data().date?.toDate() || new Date(),
         createdAt: doc.data().createdAt?.toDate() || new Date()
       })) as WageEntry[];
+
+      // Compile wage entries into weekly periods
+      const wageEntries = this.compileWageEntriesWeekly(rawWageEntries);
 
       // Get payments for this account
       const paymentsQuery = query(
@@ -500,12 +591,16 @@ export class LedgerService {
 
       // Add wage entries (credits)
       wageEntries.forEach(wage => {
+        const description = wage.category === 'Weekly Wages' && wage.weekLabel
+          ? `${wage.category} - ${wage.labourName} (${wage.weekLabel})`
+          : `${wage.category} - ${wage.labourName}`;
+          
         entries.push({
           id: `wage-${wage.id}`,
           date: wage.date,
           type: 'credit',
-          description: `${wage.category} - ${wage.employeeName}`,
-          member: wage.employeeName,
+          description: description,
+          member: wage.labourName,
           amount: wage.wageAmount,
           runningBalance: 0, // Will be calculated later
           referenceId: wage.id,
@@ -597,7 +692,7 @@ export class LedgerService {
           .reduce((sum, entry) => sum + Math.abs(entry.amount), 0); // Use absolute value for total calculation
 
       const memberBreakdown: MemberBalance[] = members.map(member => {
-        const memberWages = wageEntries.filter(w => w.employeeId === member.id);
+        const memberWages = wageEntries.filter(w => w.labourID === member.labourID);
         const memberCredits = memberWages.reduce((sum, wage) => sum + wage.wageAmount, 0);
         
         // For accounts, we don't track individual debits per member

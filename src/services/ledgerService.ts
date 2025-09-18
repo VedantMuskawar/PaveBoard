@@ -33,23 +33,25 @@ export class LedgerService {
   private static searchCache = new Map<string, { results: LedgerSearchResult[], timestamp: number }>();
   private static readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-  // Helper function to get week boundaries (Thursday to Wednesday)
+  // Helper function to get week boundaries (Wednesday to Tuesday)
   private static getWeekBoundaries(date: Date): { weekStart: Date, weekEnd: Date, weekLabel: string } {
     const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-    const thursday = 4; // Thursday is day 4
+    const wednesday = 3; // Wednesday is day 3
     
-    // Calculate days to subtract to get to Thursday of current week
-    const daysToSubtract = (dayOfWeek + 7 - thursday) % 7;
+    // Calculate days to subtract to get to Wednesday of current week
+    // If today is Wednesday (3) or later, use this week's Wednesday
+    // If today is Sunday (0), Monday (1), or Tuesday (2), use last week's Wednesday
+    const daysToSubtract = (dayOfWeek + 7 - wednesday) % 7;
     
     const weekStart = new Date(date);
     weekStart.setDate(date.getDate() - daysToSubtract);
     weekStart.setHours(0, 0, 0, 0);
     
     const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 6); // Wednesday (6 days after Thursday)
+    weekEnd.setDate(weekStart.getDate() + 6); // Tuesday (6 days after Wednesday)
     weekEnd.setHours(23, 59, 59, 999);
     
-    // Create week label (e.g., "Week of Thu, 10 Sep 2025")
+    // Create week label (e.g., "Week of Wed, 10 Sep 2025")
     const weekLabel = `Week of ${weekStart.toLocaleDateString('en-GB', { 
       weekday: 'short', 
       day: '2-digit', 

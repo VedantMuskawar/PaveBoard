@@ -591,10 +591,14 @@ const ExpensesManagement = ({ onBack }) => {
         expenseData.employeeTags = selectedEmployee.employeeTags || [];
         expenseData.previousBalance = selectedEmployee.currentBalance || 0; // Store as paisa
         expenseData.newBalance = (selectedEmployee.currentBalance || 0) - EmployeeService.formatMoneyToPaise(Number(amount)); // Store as paisa
-        expenseData.accountId = selectedEmployee.accountId;
-        expenseData.accountName = selectedEmployee.accountName;
         expenseData.isAccount = selectedEmployee.isAccount;
-        expenseData.memberIds = selectedEmployee.memberIds;
+        
+        // Only set account-specific fields if this is an account
+        if (selectedEmployee.isAccount) {
+          expenseData.accountId = selectedEmployee.accountId;
+          expenseData.accountName = selectedEmployee.accountName;
+          expenseData.memberIds = selectedEmployee.memberIds;
+        }
       }
 
 
@@ -919,10 +923,14 @@ const ExpensesManagement = ({ onBack }) => {
         updatedExpenseData.employeeTags = selectedEmployee.employeeTags || [];
         updatedExpenseData.previousBalance = selectedEmployee.currentBalance || 0; // Store as paisa
         updatedExpenseData.newBalance = (selectedEmployee.currentBalance || 0) - EmployeeService.formatMoneyToPaise(Number(amount)); // Store as paisa
-        updatedExpenseData.accountId = selectedEmployee.accountId;
-        updatedExpenseData.accountName = selectedEmployee.accountName;
         updatedExpenseData.isAccount = selectedEmployee.isAccount;
-        updatedExpenseData.memberIds = selectedEmployee.memberIds;
+        
+        // Only set account-specific fields if this is an account
+        if (selectedEmployee.isAccount) {
+          updatedExpenseData.accountId = selectedEmployee.accountId;
+          updatedExpenseData.accountName = selectedEmployee.accountName;
+          updatedExpenseData.memberIds = selectedEmployee.memberIds;
+        }
       }
 
       // Add vendor information for raw material expenses

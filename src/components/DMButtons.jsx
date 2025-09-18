@@ -8,7 +8,7 @@ import {
   updateDoc,
   doc,
 } from "firebase/firestore";
-import { generateDeliveryMemo } from "./DeliveryMemo";
+import { generateDeliveryMemoSafe } from "./DeliveryMemo";
 
 export default function DMButtons({ order, onActionLoading }) {
   const [dmInfo, setDmInfo] = useState(null);
@@ -34,8 +34,8 @@ export default function DMButtons({ order, onActionLoading }) {
 
   useEffect(() => {
     const fetchDM = async () => {
-      // Use defOrderID as primary identifier, fallback to docID/id
-      const orderIdentifier = order.defOrderID || order.docID || order.id;
+      // Use docID as primary identifier to ensure each SCH_ORDERS document gets its own DM
+      const orderIdentifier = order.docID || order.id;
       
       const q = query(
         collection(db, "DELIVERY_MEMOS"),
@@ -51,7 +51,7 @@ export default function DMButtons({ order, onActionLoading }) {
       }
     };
     fetchDM();
-  }, [order.defOrderID, order.docID, order.id]);
+  }, [order.docID, order.id]);
 
   const buttonStyleBase = {
     padding: "0.4rem 0.9rem",
@@ -84,68 +84,70 @@ export default function DMButtons({ order, onActionLoading }) {
         return;
       }
 
-      // Check if a DM already exists for this exact order
-      const orderIdentifier = order.defOrderID || order.docID || order.id;
-      const checkQ = query(
-        collection(db, "DELIVERY_MEMOS"),
-        where("orderID", "==", orderIdentifier),
-        where("status", "==", "active")
-      );
-      const existingSnap = await getDocs(checkQ);
-      if (!existingSnap.empty) {
-        const existingDM = existingSnap.docs[0];
-        alert(`A Delivery Memo (#${existingDM.data().dmNumber}) already exists for this order.`);
-        setDmInfo({ id: existingDM.id, ...existingDM.data() });
+      // Enhanced deduplication checks with transaction-safe generation
+      // 1. Check if current SCH_ORDERS already has a dmNumber
+      if (order.dmNumber && typeof order.dmNumber === 'number') {
+        alert(`This order already has Delivery Memo #${order.dmNumber}.`);
+        // Fetch and set DM info for UI consistency
+        const q = query(
+          collection(db, "DELIVERY_MEMOS"),
+          where("dmNumber", "==", order.dmNumber),
+          where("orgID", "==", order.orgID),
+          where("status", "==", "active")
+        );
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const dmDoc = snap.docs[0];
+          setDmInfo({ id: dmDoc.id, ...dmDoc.data() });
+        }
         return;
       }
 
-      // Validate required order data
+      // 2. Validate required order data
       if (!order.clientName || !order.vehicleNumber || !order.productName) {
         alert("Cannot generate DM: Missing required order information (client name, vehicle number, or product name).");
         return;
       }
 
-      // Generate new DM
-      await generateDeliveryMemo(order);
+      if (!order.defOrderID) {
+        alert("Cannot generate DM: Missing defOrderID in order data.");
+        return;
+      }
 
-      // Fetch newly generated DM with retry logic
-      let retries = 3;
-      let snap;
-      while (retries > 0) {
+      if (!order.deliveryDate) {
+        alert("Cannot generate DM: Missing deliveryDate in order data.");
+        return;
+      }
+
+      // 3. Generate new DM using enhanced transaction-safe method
+      const result = await generateDeliveryMemoSafe(order);
+      
+      if (!result.success) {
+        console.error("DM generation failed:", result.error);
+        return;
+      }
+
+      // Set DM info from successful generation result
+      if (result.dmNumber) {
+        // Query for the DM document by dmNumber (more reliable than orderID after transaction)
         const q = query(
           collection(db, "DELIVERY_MEMOS"),
-          where("orderID", "==", orderIdentifier),
+          where("dmNumber", "==", result.dmNumber),
+          where("orgID", "==", order.orgID),
           where("status", "==", "active")
         );
-        snap = await getDocs(q);
-        if (!snap.empty) break;
-        retries--;
-        if (retries > 0) {
-          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+        const snap = await getDocs(q);
+        
+        if (!snap.empty) {
+          const dmDoc = snap.docs[0];
+          setDmInfo({ id: dmDoc.id, ...dmDoc.data() });
+          
+          // Only show "just generated" animation for new DMs
+          if (!result.isExisting) {
+            setJustGenerated(true);
+            setTimeout(() => setJustGenerated(false), 3000);
+          }
         }
-      }
-      
-      if (!snap.empty) {
-        const dmDoc = snap.docs[0];
-        const docData = dmDoc.data();
-        setDmInfo({ id: dmDoc.id, ...docData });
-        
-        const docId = order.docID || order.id;
-        await updateDoc(doc(db, "SCH_ORDERS", docId), {
-          dmNumber: docData.dmNumber,
-          clientPhoneNumber: order.clientPhoneNumber || "",
-          address: order.address || "",
-          driverName: order.driverName || "",
-          dmGeneratedAt: new Date(),
-          dmGeneratedBy: auth.currentUser?.uid || "unknown"
-        });
-        
-        setJustGenerated(true);
-        setTimeout(() => setJustGenerated(false), 3000);
-        
-        alert(`Delivery Memo #${docData.dmNumber} generated successfully!`);
-      } else {
-        throw new Error("Failed to retrieve generated DM after retries");
       }
     } catch (error) {
       console.error("Error generating DM:", error);
@@ -176,31 +178,45 @@ export default function DMButtons({ order, onActionLoading }) {
     if (onActionLoading) onActionLoading(actionId, true);
 
     try {
+      console.log("🚀 Starting DM cancellation process...");
+      console.log("DM Info:", dmInfo);
+      console.log("Order Info:", order);
+      console.log("Current User:", auth.currentUser?.uid);
+
       // Validate order is not already delivered or dispatched
       if (order.deliveryStatus) {
+        console.log("❌ Order already delivered");
         alert("Cannot cancel DM for an already delivered order.");
         return;
       }
       
       if (order.dispatchStatus) {
+        console.log("❌ Order already dispatched");
         alert("Cannot cancel DM for an already dispatched order.");
         return;
       }
 
-      // Verify DM still exists and is active
+      // Verify DM still exists and is active with orgID filter
       const verifyQuery = query(
         collection(db, "DELIVERY_MEMOS"),
         where("dmNumber", "==", dmInfo.dmNumber),
-        where("status", "==", "active")
+        where("status", "==", "active"),
+        where("orgID", "==", order.orgID)
       );
+      console.log("🔍 Verifying DM exists with query:", verifyQuery);
       const verifySnap = await getDocs(verifyQuery);
       
       if (verifySnap.empty) {
+        console.log("❌ DM not found or already cancelled");
         alert("Delivery Memo not found or has already been cancelled.");
         setDmInfo(null);
         return;
       }
 
+      console.log("✅ DM verification successful, proceeding with cancellation");
+
+      // Update DELIVERY_MEMOS collection
+      console.log("📝 Updating DELIVERY_MEMOS document:", dmInfo.id);
       await updateDoc(doc(db, "DELIVERY_MEMOS", dmInfo.id), {
         status: "cancelled",
         cancelledAt: new Date(),
@@ -217,12 +233,16 @@ export default function DMButtons({ order, onActionLoading }) {
         deliveredTime: "Cancelled"
       });
 
+      // Update SCH_ORDERS collection
       const docId = order.docID || order.id;
+      console.log("📝 Updating SCH_ORDERS document:", docId);
       await updateDoc(doc(db, "SCH_ORDERS", docId), {
         dmNumber: "Cancelled",
         dmCancelledAt: new Date(),
         dmCancelledBy: auth.currentUser?.uid || "unknown"
       });
+
+      console.log("✅ DM cancellation completed successfully");
 
       // Clear DM info and refresh the component state
       setDmInfo(null);
@@ -230,11 +250,12 @@ export default function DMButtons({ order, onActionLoading }) {
       
       // Force a re-fetch of DM status to ensure UI updates correctly
       setTimeout(async () => {
-        const orderIdentifier = order.defOrderID || order.docID || order.id;
+        const orderIdentifier = order.docID || order.id;
         const q = query(
           collection(db, "DELIVERY_MEMOS"),
           where("orderID", "==", orderIdentifier),
-          where("status", "==", "active")
+          where("status", "==", "active"),
+          where("orgID", "==", order.orgID)
         );
         const snap = await getDocs(q);
         if (snap.empty) {
@@ -247,13 +268,19 @@ export default function DMButtons({ order, onActionLoading }) {
         }
       }, 500);
     } catch (error) {
-      console.error("Error cancelling DM:", error);
+      console.error("❌ Error cancelling DM:", error);
+      console.error("Error details:", {
+        code: error.code,
+        message: error.message,
+        stack: error.stack
+      });
+      
       if (error.code === 'permission-denied') {
-        alert("You don't have permission to cancel this delivery memo.");
+        alert("You don't have permission to cancel this delivery memo. Please check your Firebase security rules.");
       } else if (error.code === 'not-found') {
         alert("Delivery Memo not found. It may have already been cancelled.");
       } else {
-        alert("Failed to cancel delivery memo. Please try again or contact support.");
+        alert(`Failed to cancel delivery memo: ${error.message}. Please try again or contact support.`);
       }
     } finally {
       if (onActionLoading) onActionLoading(actionId, false);

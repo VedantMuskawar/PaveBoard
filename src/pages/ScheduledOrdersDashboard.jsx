@@ -308,20 +308,53 @@ useEffect(() => {
     }
   }, [selectedVehicle, vehicles]);
 
-  // Deduplication: Only remove orders with identical docID (true database duplicates)
-  // This allows multiple orders with same defOrderID but different time slots to show
+  // Enhanced deduplication: Use composite key based on all differentiation factors
+  // Orders are considered duplicates only if ALL factors match: docID, clientName, deliveryDate, vehicleNumber, dispatchStart, dispatchEnd
   const deduplicatedOrders = useMemo(() => {
     const uniqueOrdersMap = new Map();
     
-    sortedOrders.forEach(order => {
-      // Use docID as the unique key - this is the actual database document ID
-      const docID = order.docID || order.id;
+    // Helper function to create consistent composite keys
+    const createCompositeKey = (order) => {
+      const factors = {
+        docID: order.docID || order.id || 'no-docid',
+        clientName: order.clientName || 'no-client',
+        deliveryDate: order.deliveryDate?.seconds || 'no-date',
+        vehicleNumber: order.vehicleNumber || 'no-vehicle',
+        dispatchStart: order.dispatchStart?.seconds || 'no-dispatch-start',
+        dispatchEnd: order.dispatchEnd?.seconds || 'no-dispatch-end'
+      };
       
-      if (!uniqueOrdersMap.has(docID)) {
-        uniqueOrdersMap.set(docID, order);
+      return [
+        factors.docID,
+        factors.clientName,
+        factors.deliveryDate,
+        factors.vehicleNumber,
+        factors.dispatchStart,
+        factors.dispatchEnd
+      ].join('|');
+    };
+    
+    sortedOrders.forEach(order => {
+      const compositeKey = createCompositeKey(order);
+      
+      if (!uniqueOrdersMap.has(compositeKey)) {
+        uniqueOrdersMap.set(compositeKey, order);
       } else {
-        // Only log if we find actual database duplicates (shouldn't happen)
+        // Log potential conflicts for analysis
         if (process.env.NODE_ENV === 'development') {
+          console.warn('Potential duplicate order detected:', {
+            existing: uniqueOrdersMap.get(compositeKey),
+            new: order,
+            compositeKey,
+            factors: {
+              docID: order.docID || order.id,
+              clientName: order.clientName,
+              deliveryDate: order.deliveryDate,
+              vehicleNumber: order.vehicleNumber,
+              dispatchStart: order.dispatchStart,
+              dispatchEnd: order.dispatchEnd
+            }
+          });
         }
       }
     });
@@ -329,18 +362,18 @@ useEffect(() => {
     return Array.from(uniqueOrdersMap.values());
   }, [sortedOrders]);
 
-  // Use defOrderID for unique order identification with proper deduplication
+  // Generate unique keys for React rendering - orders are already deduplicated above
   const ordersWithUniqueKeys = useMemo(() => {
     const result = deduplicatedOrders.map((order, index) => {
-      // Create a more robust unique key combining multiple identifiers
+      // Create a display-friendly unique key for React rendering
+      // Since deduplication is already handled above, we can use simpler keys
       const baseKey = order.defOrderID || order.docID || order.id;
-      const timeKey = order.dispatchStart?.seconds || order.deliveryDate?.seconds || index;
+      const dispatchKey = order.dispatchStart?.seconds || order.deliveryDate?.seconds || index;
       const productKey = order.productName ? order.productName.substring(0, 10) : '';
-      const quantityKey = order.productQuant || 0;
       
-      // Combine multiple factors to ensure uniqueness even with same time slots
+      // Create a readable unique key for UI purposes
       const uniqueKey = baseKey 
-        ? `${baseKey}-${timeKey}-${productKey}-${quantityKey}` 
+        ? `${baseKey}-${dispatchKey}-${productKey}` 
         : `order-${index}-${productKey}`;
       
       return {
@@ -634,6 +667,11 @@ const OrderCard = memo(({ order: o, formatTime, actionLoading, setActionLoading,
                 if (window.confirm(confirmMessage)) {
                   setActionLoading(actionId, true);
                   try {
+                    console.log("🚀 Starting DM cancellation from ScheduledOrdersDashboard...");
+                    console.log("Order:", o);
+                    console.log("OrgID:", orgId);
+                    console.log("Current User:", auth.currentUser?.uid);
+
                     // First, verify the DM still exists and is active
                     const dmQuery = query(
                       collection(db, "DELIVERY_MEMOS"),
@@ -642,21 +680,86 @@ const OrderCard = memo(({ order: o, formatTime, actionLoading, setActionLoading,
                       where("status", "==", "active")
                     );
 
+                    console.log("🔍 Verifying DM exists with query:", dmQuery);
                     const snapshot = await getDocs(dmQuery);
                     if (snapshot.empty) {
+                      console.log("❌ DM not found or already cancelled");
                       alert("Delivery Memo not found or has already been cancelled.");
                       return;
                     }
 
                     const dmDoc = snapshot.docs[0];
                     const dmData = dmDoc.data();
+                    console.log("✅ DM found:", dmData);
                     
-                    // Verify this is the correct DM for this order
-                    if (dmData.orderID !== o.docID) {
-                      alert("Delivery Memo does not match this order. Please refresh the page.");
+                    // Enhanced verification: Check if this DM belongs to this order or related orders
+                    let canCancel = false;
+                    let cancelReason = "";
+                    
+                    if (dmData.orderID === o.docID) {
+                      // Direct match - this DM was created for this specific order
+                      canCancel = true;
+                      cancelReason = "direct_match";
+                    } else if (dmData.defOrderID === o.defOrderID && dmData.deliveryDate?.seconds === o.deliveryDate?.seconds) {
+                      // Same defOrderID and deliveryDate - this is a related order that shares the same DM
+                      console.log("⚠️ DM orderID mismatch but same defOrderID+deliveryDate:", {
+                        dmOrderID: dmData.orderID,
+                        currentOrderID: o.docID,
+                        defOrderID: o.defOrderID,
+                        dmDefOrderID: dmData.defOrderID
+                      });
+                      
+                      // Allow cancellation but warn user about the relationship
+                      const confirmRelated = window.confirm(
+                        `This Delivery Memo #${o.dmNumber} was created for a related order.\n\n` +
+                        `Cancelling it will affect all orders with the same defOrderID (${o.defOrderID}) and delivery date.\n\n` +
+                        `Do you still want to proceed?`
+                      );
+                      
+                      if (confirmRelated) {
+                        canCancel = true;
+                        cancelReason = "related_order";
+                      }
+                    } else if (dmData.orderID === o.defOrderID || (!dmData.defOrderID && dmData.orderID === o.defOrderID)) {
+                      // Legacy DM scenario: DM's orderID matches current order's defOrderID
+                      // This happens when DM was created before the enhanced system
+                      console.log("⚠️ Legacy DM detected - orderID matches defOrderID:", {
+                        dmOrderID: dmData.orderID,
+                        currentDefOrderID: o.defOrderID,
+                        currentOrderID: o.docID,
+                        dmDefOrderID: dmData.defOrderID
+                      });
+                      
+                      // Allow cancellation but warn user about the legacy relationship
+                      const confirmLegacy = window.confirm(
+                        `This appears to be a legacy Delivery Memo #${o.dmNumber}.\n\n` +
+                        `It was created for defOrderID ${o.defOrderID} but may affect multiple related orders.\n\n` +
+                        `Do you want to proceed with cancellation?`
+                      );
+                      
+                      if (confirmLegacy) {
+                        canCancel = true;
+                        cancelReason = "legacy_order";
+                      }
+                    } else {
+                      // No relationship found - this shouldn't happen
+                      console.log("❌ DM has no relationship to current order:", {
+                        dmOrderID: dmData.orderID,
+                        dmDefOrderID: dmData.defOrderID,
+                        currentOrderID: o.docID,
+                        currentDefOrderID: o.defOrderID
+                      });
+                      alert("This Delivery Memo does not belong to this order. Please refresh the page and try again.");
                       return;
                     }
+                    
+                    if (!canCancel) {
+                      return;
+                    }
+                    
+                    console.log(`✅ Proceeding with DM cancellation (${cancelReason}):`, dmDoc.id);
 
+                    console.log("📝 Updating DELIVERY_MEMOS document:", dmDoc.id);
                     // Update DELIVERY_MEMOS collection
                     await updateDoc(doc(db, "DELIVERY_MEMOS", dmDoc.id), {
                       status: "cancelled",
@@ -669,22 +772,78 @@ const OrderCard = memo(({ order: o, formatTime, actionLoading, setActionLoading,
                       toAccount: "Cancelled",
                       paySchedule: "Cancelled",
                       paymentStatus: "Cancelled",
-                      dispatchStart: "Cancelled",
-                      dispatchEnd: "Cancelled",
-                      deliveryDate: "Cancelled",
+                      // ✅ PRESERVE original deliveryDate, dispatchStart, dispatchEnd for audit trail
+                      // deliveryDate: "Cancelled", // ❌ REMOVED - keep original date
+                      // dispatchStart: "Cancelled", // ❌ REMOVED - keep original timestamp  
+                      // dispatchEnd: "Cancelled", // ❌ REMOVED - keep original timestamp
                       dispatchedTime: "Cancelled",
                       deliveredTime: "Cancelled",
                       cancelledAt: new Date(),
                       cancelledBy: auth.currentUser?.uid || "unknown"
                     });
                     
-                    // Update SCH_ORDERS collection
-                    await updateDoc(doc(db, "SCH_ORDERS", o.docID), {
-                      dmNumber: "Cancelled",
-                      dmCancelledAt: new Date(),
-                      dmCancelledBy: auth.currentUser?.uid || "unknown"
-                    });
+                    // Update SCH_ORDERS collection - handle direct, related, and legacy orders
+                    if (cancelReason === "direct_match") {
+                      console.log("📝 Updating SCH_ORDERS document (direct):", o.docID);
+                      await updateDoc(doc(db, "SCH_ORDERS", o.docID), {
+                        dmNumber: "Cancelled",
+                        dmCancelledAt: new Date(),
+                        dmCancelledBy: auth.currentUser?.uid || "unknown"
+                      });
+                    } else if (cancelReason === "related_order") {
+                      console.log("📝 Updating all related SCH_ORDERS documents for defOrderID:", o.defOrderID);
+                      
+                      // Find all SCH_ORDERS documents with the same defOrderID and deliveryDate that have this dmNumber
+                      const relatedOrdersQuery = query(
+                        collection(db, "SCH_ORDERS"),
+                        where("defOrderID", "==", o.defOrderID),
+                        where("deliveryDate", "==", o.deliveryDate),
+                        where("orgID", "==", orgId),
+                        where("dmNumber", "==", o.dmNumber)
+                      );
+                      
+                      const relatedOrdersSnap = await getDocs(relatedOrdersQuery);
+                      console.log(`📝 Found ${relatedOrdersSnap.docs.length} related orders to update`);
+                      
+                      // Update all related orders
+                      const updatePromises = relatedOrdersSnap.docs.map(relatedDoc => {
+                        console.log("📝 Updating related SCH_ORDERS document:", relatedDoc.id);
+                        return updateDoc(doc(db, "SCH_ORDERS", relatedDoc.id), {
+                          dmNumber: "Cancelled",
+                          dmCancelledAt: new Date(),
+                          dmCancelledBy: auth.currentUser?.uid || "unknown"
+                        });
+                      });
+                      
+                      await Promise.all(updatePromises);
+                    } else if (cancelReason === "legacy_order") {
+                      console.log("📝 Updating SCH_ORDERS documents for legacy DM with defOrderID:", o.defOrderID);
+                      
+                      // For legacy DMs, find all SCH_ORDERS documents that have this dmNumber
+                      // This is more comprehensive as legacy DMs might not have proper defOrderID linking
+                      const legacyOrdersQuery = query(
+                        collection(db, "SCH_ORDERS"),
+                        where("dmNumber", "==", o.dmNumber),
+                        where("orgID", "==", orgId)
+                      );
+                      
+                      const legacyOrdersSnap = await getDocs(legacyOrdersQuery);
+                      console.log(`📝 Found ${legacyOrdersSnap.docs.length} legacy orders to update`);
+                      
+                      // Update all orders that reference this DM number
+                      const updatePromises = legacyOrdersSnap.docs.map(legacyDoc => {
+                        console.log("📝 Updating legacy SCH_ORDERS document:", legacyDoc.id);
+                        return updateDoc(doc(db, "SCH_ORDERS", legacyDoc.id), {
+                          dmNumber: "Cancelled",
+                          dmCancelledAt: new Date(),
+                          dmCancelledBy: auth.currentUser?.uid || "unknown"
+                        });
+                      });
+                      
+                      await Promise.all(updatePromises);
+                    }
                     
+                    console.log("✅ DM cancellation completed successfully");
                     alert(`Delivery Memo #${o.dmNumber} has been successfully cancelled.`);
                   } catch (error) {
                     if (error.code === 'permission-denied') {

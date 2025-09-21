@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { collection, query, where, getDocs, orderBy, limit, startAfter, doc, updateDoc, serverTimestamp, onSnapshot, runTransaction } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import toast from 'react-hot-toast';
@@ -12,6 +12,8 @@ export const useOrders = (orgID, filters, pagination) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [readCount, setReadCount] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
+  const lastVisibleDocRef = useRef(null);
   
   const {
     statusFilter,
@@ -38,93 +40,112 @@ export const useOrders = (orgID, filters, pagination) => {
     return new Date(startDate) <= new Date(endDate);
   }, []);
 
-  // Build optimized Firestore query with database-level filtering and pagination
-  const buildOptimizedQuery = useCallback((page = 1, pageSize = 20) => {
-    if (!orgID) return null;
-    
-    const ordersRef = collection(db, "DELIVERY_MEMOS");
-    let queryConstraints = [
-      where("orgID", "==", orgID)
-    ];
-    
-    // Add status filter to database query
-    if (statusFilter !== "all") {
-      queryConstraints.push(where("status", "==", statusFilter));
-    }
-    
-    // Add DM number range filter to database query with validation
-    if (dmFrom && dmTo && validateDMRange(dmFrom, dmTo)) {
-      const fromNum = parseInt(dmFrom);
-      const toNum = parseInt(dmTo);
-      if (!isNaN(fromNum) && !isNaN(toNum)) {
-        queryConstraints.push(
-          where("dmNumber", ">=", fromNum),
-          where("dmNumber", "<=", toNum)
-        );
-      }
-    }
-    
-    // Add date range filter to database query with validation
-    if (startDate && endDate && validateDateRange(startDate, endDate)) {
-      const startDateObj = new Date(startDate);
-      const endDateObj = new Date(endDate);
-      
-      // Validate dates
-      if (!isNaN(startDateObj.getTime()) && !isNaN(endDateObj.getTime())) {
-        endDateObj.setHours(23, 59, 59, 999); // End of day
-        
-        queryConstraints.push(
-          where("deliveryDate", ">=", startDateObj),
-          where("deliveryDate", "<=", endDateObj)
-        );
-      }
-    }
-    
-    // Add ordering
-    queryConstraints.push(orderBy("dmNumber", sortOrder === "asc" ? "asc" : "desc"));
-    
-    // Add pagination
-    queryConstraints.push(limit(pageSize));
-    
-    return query(ordersRef, ...queryConstraints);
-  }, [orgID, statusFilter, dmFrom, dmTo, startDate, endDate, sortOrder, validateDMRange, validateDateRange]);
 
-  // Load orders with optimized database queries and pagination
+  // Reset pagination when filters change (except currentPage)
   useEffect(() => {
     if (!orgID) return;
     
-    setLoading(true);
-    setError(null);
+    // Reset pagination state when filters change
+    lastVisibleDocRef.current = null;
+    setOrders([]);
+  }, [orgID, statusFilter, dmFrom, dmTo, startDate, endDate, sortOrder]);
+
+  // Load orders with proper pagination
+  useEffect(() => {
+    if (!orgID) return;
     
-    const q = buildOptimizedQuery(currentPage, rowsPerPage);
-    if (!q) return;
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const ordersData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        // Ensure status is properly set
-        status: doc.data().status || (doc.data().dmNumber === "Cancelled" ? "cancelled" : "active")
-      }));
+    const loadOrders = async () => {
+      setLoading(true);
+      setError(null);
       
-      // Update read count (reset for each query, don't accumulate)
-      setReadCount(snapshot.docs.length);
-      
-      setOrders(ordersData);
-      setLoading(false);
-      
-    }, (error) => {
-      setError(error);
-      toast.error("Failed to load orders from Firebase");
-      setOrders([]);
-      setLoading(false);
-    });
-    
-    // Cleanup listener when component unmounts or dependencies change
-    return () => {
-      unsubscribe();
+      try {
+        // Build query directly inside the effect to avoid dependency issues
+        const ordersRef = collection(db, "DELIVERY_MEMOS");
+        let queryConstraints = [
+          where("orgID", "==", orgID)
+        ];
+        
+        // Add status filter to database query
+        if (statusFilter !== "all") {
+          queryConstraints.push(where("status", "==", statusFilter));
+        }
+        
+        // Add DM number range filter to database query with validation
+        if (dmFrom && dmTo && validateDMRange(dmFrom, dmTo)) {
+          const fromNum = parseInt(dmFrom);
+          const toNum = parseInt(dmTo);
+          if (!isNaN(fromNum) && !isNaN(toNum)) {
+            queryConstraints.push(
+              where("dmNumber", ">=", fromNum),
+              where("dmNumber", "<=", toNum)
+            );
+          }
+        }
+        
+        // Add date range filter to database query with validation
+        if (startDate && endDate && validateDateRange(startDate, endDate)) {
+          const startDateObj = new Date(startDate);
+          const endDateObj = new Date(endDate);
+          
+          // Validate dates
+          if (!isNaN(startDateObj.getTime()) && !isNaN(endDateObj.getTime())) {
+            endDateObj.setHours(23, 59, 59, 999); // End of day
+            
+            queryConstraints.push(
+              where("deliveryDate", ">=", startDateObj),
+              where("deliveryDate", "<=", endDateObj)
+            );
+          }
+        }
+        
+        // Add ordering
+        queryConstraints.push(orderBy("dmNumber", sortOrder === "asc" ? "asc" : "desc"));
+        
+        // Add pagination with startAfter for proper pagination
+        const startAfterDoc = currentPage === 1 ? null : lastVisibleDocRef.current;
+        if (startAfterDoc && currentPage > 1) {
+          queryConstraints.push(startAfter(startAfterDoc));
+        }
+        
+        // Add limit
+        queryConstraints.push(limit(rowsPerPage));
+        
+        const q = query(ordersRef, ...queryConstraints);
+        
+        console.log(`🔄 Loading page ${currentPage} with ${rowsPerPage} items per page`);
+        
+        const snapshot = await getDocs(q);
+        const ordersData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          // Ensure status is properly set
+          status: doc.data().status || (doc.data().dmNumber === "Cancelled" ? "cancelled" : "active")
+        }));
+        
+        // Update read count
+        setReadCount(snapshot.docs.length);
+        
+        // Set the last visible document for next page
+        if (snapshot.docs.length > 0) {
+          lastVisibleDocRef.current = snapshot.docs[snapshot.docs.length - 1];
+        }
+        
+        setOrders(ordersData);
+        setLoading(false);
+        
+        console.log(`✅ Loaded ${ordersData.length} orders for page ${currentPage}`);
+        
+      } catch (error) {
+        setError(error);
+        toast.error("Failed to load orders from Firebase");
+        setOrders([]);
+        setLoading(false);
+        console.error('❌ Error loading orders:', error);
+      }
     };
-  }, [orgID, currentPage, statusFilter, dmFrom, dmTo, startDate, endDate, sortOrder, buildOptimizedQuery]);
+    
+    loadOrders();
+  }, [orgID, currentPage, statusFilter, dmFrom, dmTo, startDate, endDate, sortOrder, rowsPerPage, validateDMRange, validateDateRange]);
 
   // Cancel order function
   const cancelOrder = useCallback(async (selectedDM, wallet, orgID) => {
@@ -216,6 +237,8 @@ export const useOrders = (orgID, filters, pagination) => {
     loading,
     error,
     cancelOrder,
-    readCount
+    readCount,
+    totalCount,
+    hasMoreData: orders.length === rowsPerPage
   };
 };

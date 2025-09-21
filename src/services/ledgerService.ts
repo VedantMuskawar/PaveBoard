@@ -98,12 +98,19 @@ export class LedgerService {
       if (weekData.entries.length > 0) {
         // Use the first entry as base and modify it
         const baseEntry = weekData.entries[0];
+        
+        // Determine category based on the entries
+        const isProductionEntry = baseEntry.category === 'Production' || 
+          weekData.entries.some(entry => entry.category === 'Production');
+        
+        const category = isProductionEntry ? 'Production' : 'Weekly Wages';
+        
         compiledEntries.push({
           ...baseEntry,
           id: `weekly-${weekKey}`,
           wageAmount: weekData.totalAmount,
-          category: 'Weekly Wages' as any,
-          labourName: `${baseEntry.labourName} (${weekData.entries.length} days)`,
+          category: category as any,
+          labourName: `${baseEntry.labourName} (${weekData.entries.length} ${isProductionEntry ? 'entries' : 'days'})`,
           date: weekData.weekEnd, // Use end of week as the date
           weekLabel: weekData.weekLabel,
           originalEntries: weekData.entries // Keep reference to original entries
@@ -349,20 +356,54 @@ export class LedgerService {
         throw new Error("Employee not found");
       }
 
-      // Get wage entries (credits)
-      const wagesQuery = query(
+      // Get wage entries (credits) - handle both labourID and employeeId fields
+      // First, try with labourID (for regular employees)
+      const wagesQueryLabourID = query(
         collection(db, this.WAGES_COLLECTION),
         where("orgID", "==", orgID),
         where("labourID", "==", employee.labourID)
       );
 
-      const wagesSnapshot = await getDocs(wagesQuery);
-      const rawWageEntries: WageEntry[] = wagesSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        date: doc.data().date?.toDate() || new Date(),
-        createdAt: doc.data().createdAt?.toDate() || new Date()
-      })) as WageEntry[];
+      // Second, try with employeeId (for Production employees)
+      const wagesQueryEmployeeID = query(
+        collection(db, this.WAGES_COLLECTION),
+        where("orgID", "==", orgID),
+        where("employeeId", "==", employeeId)
+      );
+
+      // Execute both queries in parallel
+      const [wagesSnapshotLabourID, wagesSnapshotEmployeeID] = await Promise.all([
+        getDocs(wagesQueryLabourID),
+        getDocs(wagesQueryEmployeeID)
+      ]);
+
+      // Combine results from both queries
+      const allWageDocs = [
+        ...wagesSnapshotLabourID.docs,
+        ...wagesSnapshotEmployeeID.docs
+      ];
+
+      // Remove duplicates based on document ID
+      const uniqueWageDocs = allWageDocs.filter((doc, index, self) => 
+        index === self.findIndex(d => d.id === doc.id)
+      );
+
+      console.log(`🔍 Found ${wagesSnapshotLabourID.docs.length} wage entries by labourID and ${wagesSnapshotEmployeeID.docs.length} by employeeId for employee ${employee.name}`);
+      console.log(`📊 Total unique wage entries: ${uniqueWageDocs.length}`);
+
+      const rawWageEntries: WageEntry[] = uniqueWageDocs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          date: data.date?.toDate() || new Date(),
+          createdAt: data.createdAt?.toDate() || new Date(),
+          // Ensure we have both labourID and employeeId for compatibility
+          labourID: data.labourID || employee.labourID,
+          employeeId: data.employeeId || employeeId,
+          labourName: data.labourName || data.employeeName || employee.name
+        };
+      }) as WageEntry[];
 
       // Compile wage entries into weekly periods
       const wageEntries = this.compileWageEntriesWeekly(rawWageEntries);
@@ -544,21 +585,60 @@ export class LedgerService {
         sum + member.openingBalance, 0
       );
 
-      // Get wage entries for all members
+      // Get wage entries for all members - handle both labourID and employeeId fields
       const memberLabourIDs = members.map(member => member.labourID).filter(Boolean);
-      const wagesQuery = query(
+      const memberEmployeeIDs = members.map(member => member.id);
+      
+      // Query by labourID (for regular employees)
+      const wagesQueryLabourID = memberLabourIDs.length > 0 ? query(
         collection(db, this.WAGES_COLLECTION),
         where("orgID", "==", orgID),
         where("labourID", "in", memberLabourIDs)
+      ) : null;
+
+      // Query by employeeId (for Production employees)
+      const wagesQueryEmployeeID = memberEmployeeIDs.length > 0 ? query(
+        collection(db, this.WAGES_COLLECTION),
+        where("orgID", "==", orgID),
+        where("employeeId", "in", memberEmployeeIDs)
+      ) : null;
+
+      // Execute queries in parallel
+      const queryPromises = [];
+      if (wagesQueryLabourID) queryPromises.push(getDocs(wagesQueryLabourID));
+      if (wagesQueryEmployeeID) queryPromises.push(getDocs(wagesQueryEmployeeID));
+      
+      const snapshots = await Promise.all(queryPromises);
+      
+      // Combine results from all queries
+      const allWageDocs = snapshots.flatMap(snapshot => snapshot.docs);
+      
+      // Remove duplicates based on document ID
+      const uniqueWageDocs = allWageDocs.filter((doc, index, self) => 
+        index === self.findIndex(d => d.id === doc.id)
       );
 
-      const wagesSnapshot = await getDocs(wagesQuery);
-      const rawWageEntries: WageEntry[] = wagesSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        date: doc.data().date?.toDate() || new Date(),
-        createdAt: doc.data().createdAt?.toDate() || new Date()
-      })) as WageEntry[];
+      console.log(`🔍 Found ${allWageDocs.length} wage entries for account members (${memberLabourIDs.length} labourIDs, ${memberEmployeeIDs.length} employeeIds)`);
+      console.log(`📊 Total unique wage entries: ${uniqueWageDocs.length}`);
+
+      const rawWageEntries: WageEntry[] = uniqueWageDocs.map(doc => {
+        const data = doc.data();
+        // Find the corresponding member
+        const member = members.find(m => 
+          m.labourID === data.labourID || m.id === data.employeeId
+        );
+        
+        return {
+          id: doc.id,
+          ...data,
+          date: data.date?.toDate() || new Date(),
+          createdAt: data.createdAt?.toDate() || new Date(),
+          // Ensure we have both labourID and employeeId for compatibility
+          labourID: data.labourID || member?.labourID,
+          employeeId: data.employeeId || member?.id,
+          labourName: data.labourName || data.employeeName || member?.name
+        };
+      }) as WageEntry[];
 
       // Compile wage entries into weekly periods
       const wageEntries = this.compileWageEntriesWeekly(rawWageEntries);

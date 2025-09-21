@@ -52,13 +52,50 @@ function ClientLedger({ onBack }) {
   // Expandable row state
   const [expandedRowId, setExpandedRowId] = useState(null);
   const [readCount, setReadCount] = useState(0);
+  const [negativeBalanceClients, setNegativeBalanceClients] = useState([]);
+  const [loadingNegativeBalance, setLoadingNegativeBalance] = useState(false);
 
+
+  // Fetch clients with negative balances
+  const fetchNegativeBalanceClients = async () => {
+    if (!selectedOrg?.orgID) return;
+    
+    setLoadingNegativeBalance(true);
+    try {
+      console.log('🔄 Fetching clients with negative balances for orgID:', selectedOrg.orgID);
+      
+      const q = query(
+        collection(db, "CLIENTS"),
+        where("orgID", "==", selectedOrg.orgID),
+        where("totalBalance", "<", 0),
+        orderBy("totalBalance", "asc") // Most negative first
+      );
+      
+      const snapshot = await getDocs(q);
+      const clientsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      console.log('✅ Fetched negative balance clients:', clientsData.length);
+      setNegativeBalanceClients(clientsData);
+      setReadCount(prev => prev + snapshot.docs.length);
+      
+    } catch (error) {
+      console.error('❌ Error fetching negative balance clients:', error);
+    } finally {
+      setLoadingNegativeBalance(false);
+    }
+  };
 
   // Check if organization is selected
   useEffect(() => {
     if (!selectedOrg) {
       return;
     }
+    
+    // Fetch negative balance clients when organization is selected
+    fetchNegativeBalanceClients();
   }, [selectedOrg]);
 
   useEffect(() => {
@@ -236,6 +273,159 @@ function ClientLedger({ onBack }) {
           </div>
         )
       }
+
+      {/* Negative Balance Clients Table */}
+      {!selectedClient && (
+        <div className="negative-balance-section" style={{ marginTop: "2rem" }}>
+          <div className="section-header" style={{ 
+            display: "flex", 
+            justifyContent: "space-between", 
+            alignItems: "center", 
+            marginBottom: "1rem" 
+          }}>
+            <h2 style={{ 
+              color: "#f5f5f7", 
+              fontSize: "1.25rem", 
+              fontWeight: "600",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem"
+            }}>
+              💸 Clients with Negative Balances
+            </h2>
+            <div style={{ 
+              fontSize: "0.875rem", 
+              color: "#a1a1aa",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem"
+            }}>
+              <span>Total: {negativeBalanceClients.length}</span>
+              <span>•</span>
+              <span>₹{negativeBalanceClients.reduce((sum, client) => sum + Math.abs(client.totalBalance || 0), 0).toLocaleString()}</span>
+            </div>
+          </div>
+
+          {loadingNegativeBalance ? (
+            <div style={{ 
+              display: "flex", 
+              justifyContent: "center", 
+              alignItems: "center", 
+              padding: "2rem",
+              background: "rgba(28,28,30,0.6)",
+              borderRadius: "12px",
+              border: "1px solid rgba(255,255,255,0.1)"
+            }}>
+              <Spinner size="lg" />
+              <span style={{ marginLeft: "1rem", color: "#a1a1aa" }}>Loading negative balance clients...</span>
+            </div>
+          ) : negativeBalanceClients.length === 0 ? (
+            <div style={{ 
+              textAlign: "center", 
+              padding: "3rem 2rem",
+              background: "rgba(28,28,30,0.6)",
+              borderRadius: "12px",
+              border: "1px solid rgba(255,255,255,0.1)",
+              color: "#a1a1aa"
+            }}>
+              <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>✅</div>
+              <h3 style={{ fontSize: "1.25rem", fontWeight: "600", marginBottom: "0.5rem", color: "#f5f5f7" }}>
+                No Negative Balances
+              </h3>
+              <p style={{ fontSize: "1rem", lineHeight: "1.5" }}>
+                All clients have positive or zero balances.
+              </p>
+            </div>
+          ) : (
+            <Card style={{ background: "rgba(28,28,30,0.6)", border: "1px solid rgba(255,255,255,0.1)" }}>
+              <div style={{ padding: "1rem" }}>
+                <DataTable
+                  data={negativeBalanceClients.map(client => ({
+                    id: client.id,
+                    name: client.name || 'N/A',
+                    phoneNumber: client.phoneNumber || 'N/A',
+                    totalBalance: client.totalBalance || 0,
+                    outstandingAmount: Math.abs(client.totalBalance || 0),
+                    totalRevenue: client.totalRevenue || 0,
+                    formattedBalance: `₹${Math.abs(client.totalBalance || 0).toLocaleString('en-IN', { 
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2 
+                    })}`,
+                    formattedRevenue: `₹${(client.totalRevenue || 0).toLocaleString('en-IN', { 
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2 
+                    })}`
+                  }))}
+                  columns={[
+                    { 
+                      key: 'name', 
+                      header: 'Client Name',
+                      render: (client) => (
+                        <div style={{ 
+                          fontWeight: "600", 
+                          color: "#f5f5f7",
+                          cursor: "pointer"
+                        }}
+                        onClick={() => setSelectedClient(negativeBalanceClients.find(c => c.id === client.id))}
+                        >
+                          {client.name}
+                        </div>
+                      )
+                    },
+                    { 
+                      key: 'phoneNumber', 
+                      header: 'Phone Number',
+                      render: (client) => (
+                        <div style={{ color: "#a1a1aa" }}>
+                          {client.phoneNumber}
+                        </div>
+                      )
+                    },
+                    { 
+                      key: 'formattedBalance', 
+                      header: 'Outstanding Amount',
+                      align: 'right',
+                      render: (client) => (
+                        <div style={{ 
+                          color: "#ff6b6b",
+                          fontWeight: "700",
+                          fontSize: "1rem"
+                        }}>
+                          -{client.formattedBalance}
+                        </div>
+                      )
+                    },
+                    { 
+                      key: 'formattedRevenue', 
+                      header: 'Total Revenue',
+                      align: 'right',
+                      render: (client) => (
+                        <div style={{ 
+                          color: "#51cf66",
+                          fontWeight: "600"
+                        }}>
+                          {client.formattedRevenue}
+                        </div>
+                      )
+                    }
+                  ]}
+                  onRowClick={(row) => {
+                    const client = negativeBalanceClients.find(c => c.id === row.id);
+                    if (client) {
+                      setSelectedClient(client);
+                    }
+                  }}
+                  className="negative-balance-table"
+                  style={{ 
+                    background: "transparent",
+                    color: "#f5f5f7"
+                  }}
+                />
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
         </div>
 
       {selectedClient && (() => {

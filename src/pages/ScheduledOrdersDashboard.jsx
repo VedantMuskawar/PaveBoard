@@ -60,7 +60,8 @@ export default function ScheduledOrdersDashboard() {
     summary: { orders: 0, qty: 0, total: 0 },
     headerCondensed: false,
     actionLoading: {},
-    dbReadCount: 0
+    dbReadCount: 0,
+    clientBalances: {} // Store client balances for quick lookup
   });
   
   const navigate = useNavigate();
@@ -78,7 +79,8 @@ export default function ScheduledOrdersDashboard() {
     summary,
     headerCondensed,
     actionLoading,
-    dbReadCount
+    dbReadCount,
+    clientBalances
   } = dashboardState;
 
   // State update helpers
@@ -95,6 +97,49 @@ export default function ScheduledOrdersDashboard() {
       }
     }));
   }, []);
+
+  // Fetch client balances for orders
+  const fetchClientBalances = useCallback(async (orderList) => {
+    if (!orgId || !orderList.length) return;
+    
+    try {
+      // Get unique client names from orders
+      const uniqueClientNames = [...new Set(orderList.map(order => order.clientName).filter(Boolean))];
+      
+      if (uniqueClientNames.length === 0) return;
+      
+      console.log('🔍 Fetching client balances for:', uniqueClientNames.length, 'clients');
+      
+      // Query clients collection for these client names
+      const clientQueries = uniqueClientNames.map(clientName => 
+        query(
+          collection(db, "CLIENTS"),
+          where("orgID", "==", orgId),
+          where("name", "==", clientName)
+        )
+      );
+      
+      // Execute all queries in parallel
+      const clientSnapshots = await Promise.all(
+        clientQueries.map(query => getDocs(query))
+      );
+      
+      // Build client balances lookup
+      const newClientBalances = {};
+      clientSnapshots.forEach(snapshot => {
+        snapshot.docs.forEach(doc => {
+          const clientData = doc.data();
+          newClientBalances[clientData.name] = clientData.totalBalance || 0;
+        });
+      });
+      
+      console.log('✅ Client balances fetched:', newClientBalances);
+      updateState({ clientBalances: newClientBalances });
+      
+    } catch (error) {
+      console.error('❌ Error fetching client balances:', error);
+    }
+  }, [orgId, updateState]);
 
   useEffect(() => {
     const onScroll = () => {
@@ -202,12 +247,15 @@ const setupRealTimeListener = useCallback((date) => {
         dbReadCount: newReadCount
       };
     });
+    
+    // Fetch client balances for the new orders
+    fetchClientBalances(ordersData);
   }, (error) => {
     updateState({ loading: false });
   });
 
   return unsubscribe;
-}, [orgId]);
+}, [orgId, fetchClientBalances]);
 
 useEffect(() => {
   if (!selectedDate) return;
@@ -523,7 +571,7 @@ useEffect(() => {
         ) : (
           <>
             {ordersWithUniqueKeys.map((o, idx) => (
-              <OrderCard 
+                <OrderCard 
                 key={o.uniqueKey}
                 order={o}
                 formatTime={formatTime}
@@ -531,6 +579,7 @@ useEffect(() => {
                 setActionLoading={setActionLoading}
                 orgId={orgId}
                 updateState={updateState}
+                clientBalances={clientBalances}
               />
             ))}
           </>
@@ -542,7 +591,7 @@ useEffect(() => {
 }
 
 // Memoized OrderCard component for better performance
-const OrderCard = memo(({ order: o, formatTime, actionLoading, setActionLoading, orgId, updateState }) => {
+const OrderCard = memo(({ order: o, formatTime, actionLoading, setActionLoading, orgId, updateState, clientBalances }) => {
   // Determine card status class
   let cardStatusClass = "pending";
   if (o.deliveryStatus) {
@@ -553,6 +602,15 @@ const OrderCard = memo(({ order: o, formatTime, actionLoading, setActionLoading,
   
   const paymentLabel = !o.paymentStatus ? (o.paySchedule === "POD" ? "Pay on Delivery" : o.paySchedule === "PL" ? "Pay Later" : o.paySchedule) : o.toAccount || "—";
   
+  // Get client balance for display
+  const clientBalance = clientBalances[o.clientName] || 0;
+  const formatBalance = (balance) => {
+    const formatted = Math.abs(balance).toLocaleString('en-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+    return balance < 0 ? `-₹${formatted}` : `₹${formatted}`;
+  };
 
   return (
     <div className={`order-card sch-card ${cardStatusClass}`}>
@@ -568,6 +626,13 @@ const OrderCard = memo(({ order: o, formatTime, actionLoading, setActionLoading,
         <div style={{ textAlign: "right", fontWeight: 700, fontSize: "18px" }}>
           <div className="sub-text" style={{ fontSize: "16px", marginBottom: "0.25rem" }}>
             👤 {o.clientName}
+          </div>
+          <div className="sub-text" style={{ 
+            fontSize: "14px", 
+            marginBottom: "0.25rem",
+            color: clientBalance < 0 ? "#ff6b6b" : clientBalance > 0 ? "#51cf66" : "#868e96"
+          }}>
+            💰 Balance: {formatBalance(clientBalance)}
           </div>
           <div className="sub-text" style={{ fontSize: "14px" }}>📞 {o.clientPhoneNumber}</div>
         </div>

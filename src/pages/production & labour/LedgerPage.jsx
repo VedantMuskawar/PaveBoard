@@ -19,6 +19,7 @@ import {
   ExportButton,
   DateRangeFilter
 } from "../../components/ui";
+import * as XLSX from "xlsx";
 
 import './LedgerPage.css';
 
@@ -219,6 +220,124 @@ function LedgerPage({ onBack }) {
     setShowSuggestions(false);
   }, []);
 
+  // Export balances function
+  const handleExportBalances = useCallback(async () => {
+    if (!orgID) {
+      toast.error("Organization not selected");
+      return;
+    }
+
+    try {
+      setLoadingData(true);
+      console.log('🔄 Starting balance export...');
+
+      // Import Firestore functions
+      const { collection, query, where, getDocs } = await import('firebase/firestore');
+      const { db } = await import('../../config/firebase');
+
+      // Fetch all employees
+      const employeesQuery = query(
+        collection(db, "employees"),
+        where("orgID", "==", orgID),
+        where("isActive", "==", true)
+      );
+      const employeesSnapshot = await getDocs(employeesQuery);
+      const employees = employeesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      console.log(`📊 Found ${employees.length} active employees`);
+
+      // Fetch all employee accounts
+      const accountsQuery = query(
+        collection(db, "employeeaccounts"),
+        where("orgID", "==", orgID)
+      );
+      const accountsSnapshot = await getDocs(accountsQuery);
+      const accounts = accountsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      console.log(`📊 Found ${accounts.length} employee accounts`);
+
+      // Prepare export data
+      const exportData = [];
+
+      // Add individual employees (those not in any account)
+      const employeesInAccounts = new Set();
+      accounts.forEach(account => {
+        if (account.memberIds) {
+          account.memberIds.forEach(memberId => {
+            employeesInAccounts.add(memberId);
+          });
+        }
+      });
+
+      employees.forEach(employee => {
+        if (!employeesInAccounts.has(employee.id)) {
+          exportData.push({
+            'S.No.': exportData.length + 1,
+            'Name': employee.name || 'N/A',
+            'Employee Tags': Array.isArray(employee.employeeTags) 
+              ? employee.employeeTags.join(', ') 
+              : (employee.employeeTags || 'N/A'),
+            'Current Balance': employee.currentBalance ? (employee.currentBalance / 100).toFixed(2) : '0.00',
+            'Type': 'Individual Employee',
+            'Labour ID': employee.labourID || 'N/A'
+          });
+        }
+      });
+
+      // Add combined accounts
+      accounts.forEach(account => {
+        exportData.push({
+          'S.No.': exportData.length + 1,
+          'Name': account.name || 'N/A',
+          'Employee Tags': 'Combined Account',
+          'Current Balance': account.currentBalance ? (account.currentBalance / 100).toFixed(2) : '0.00',
+          'Type': 'Combined Account',
+          'Labour ID': `Account (${account.memberIds?.length || 0} members)`
+        });
+      });
+
+      // Create workbook and worksheet
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(exportData);
+
+      // Set column widths
+      const colWidths = [
+        { wch: 8 },   // S.No.
+        { wch: 25 },  // Name
+        { wch: 30 },  // Employee Tags
+        { wch: 15 },  // Current Balance
+        { wch: 18 },  // Type
+        { wch: 20 }   // Labour ID
+      ];
+      ws['!cols'] = colWidths;
+
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(wb, ws, 'Employee Balances');
+
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().slice(0, 10);
+      const filename = `Employee_Balances_${timestamp}.xlsx`;
+
+      // Download file
+      XLSX.writeFile(wb, filename);
+      
+      console.log(`✅ Exported ${exportData.length} employee/account records to Excel`);
+      toast.success(`Exported ${exportData.length} employee/account balances to Excel`);
+
+    } catch (error) {
+      console.error('❌ Error exporting balances:', error);
+      toast.error('Failed to export balances. Please try again.');
+    } finally {
+      setLoadingData(false);
+    }
+  }, [orgID, toast]);
+
   return (
     <div className="apple-font">
       {/* Header */}
@@ -232,6 +351,39 @@ function LedgerPage({ onBack }) {
 
       {/* Main content container with consistent spacing */}
       <div style={{ marginTop: "1.5rem", padding: "0 2rem" }}>
+        {/* Export Balances Button */}
+        <div style={{ marginBottom: "1rem", textAlign: "center" }}>
+          <Button
+            onClick={handleExportBalances}
+            disabled={loadingData}
+            className="export-balances-button"
+            style={{
+              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+              border: "none",
+              color: "white",
+              padding: "0.75rem 2rem",
+              borderRadius: "8px",
+              fontSize: "1rem",
+              fontWeight: "600",
+              cursor: loadingData ? "not-allowed" : "pointer",
+              opacity: loadingData ? 0.7 : 1,
+              transition: "all 0.2s ease",
+              boxShadow: "0 4px 12px rgba(102, 126, 234, 0.3)"
+            }}
+          >
+            {loadingData ? (
+              <>
+                <Spinner size="sm" style={{ marginRight: "0.5rem" }} />
+                Exporting...
+              </>
+            ) : (
+              <>
+                📊 Export Balances
+              </>
+            )}
+          </Button>
+        </div>
+
         {/* Enhanced Controls */}
         <div className="mb-4 flex justify-between items-center">
           <div className="flex items-center space-x-4">

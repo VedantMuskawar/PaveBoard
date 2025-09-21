@@ -120,7 +120,7 @@ function OrdersDashboard({ onBack }) {
   
   // Use custom hooks for better separation of concerns
   const { wallet, walletLoading, isAdmin, isManager } = useAuthState();
-  const { orders, loading, cancelOrder, readCount } = useOrders(orgID, filters, pagination);
+  const { orders, loading, cancelOrder, readCount, hasMoreData: ordersHasMoreData } = useOrders(orgID, filters, pagination);
   const { exporting, exportOrdersToExcel } = useExport();
   
   const navigate = useNavigate();
@@ -706,7 +706,7 @@ function OrdersDashboard({ onBack }) {
               <Button
                 variant="outline"
                 onClick={() => updatePagination({ currentPage: currentPage + 1 })}
-                disabled={paginatedOrders.length < rowsPerPage}
+                disabled={!ordersHasMoreData}
                 size="sm"
               >
                 Next →

@@ -25,7 +25,6 @@ const VehicleLabourWeeklyLedger = lazy(() => import("./production & labour/Vehic
 const LabourManagement = lazy(() => import("./production & labour/LabourManagement"));
 const LedgerPage = lazy(() => import("./production & labour/LedgerPage"));
 const ClientLedger = lazy(() => import("./accounting/ClientLedger"));
-const ClientBalances = lazy(() => import("./accounting/ClientBalances"));
 const IncomeLedger = lazy(() => import("./accounting/IncomeLedger"));
 const ExpenseManagement = lazy(() => import("./accounting/ExpenseManagement"));
 const CashLedger = lazy(() => import("./accounting/CashLedger"));
@@ -125,7 +124,6 @@ function Home() {
         label: "💼 Financial Management",
         items: [
           { emoji: "📊", title: "Client Ledger", path: "/home/client-ledger" },
-          { emoji: "⚖️", title: "Client Balances", path: "/home/client-balances" },
           { emoji: "📈", title: "Income Ledger", path: "/home/income-ledger" },
           { emoji: "💸", title: "Expense Management", path: "/home/raw-material-entry" },
           { emoji: "💳", title: "Cash Ledger", path: "/home/cash-ledger" }
@@ -217,7 +215,6 @@ function Home() {
     "Labour Management": "labour-management",
     "Unified Ledger": "ledger",
     "Client Ledger": "client-ledger",
-    "Client Balances": "client-balances",
     "Income Ledger": "income-ledger",
     "Expense Management": "expense-management",
     "Cash Ledger": "cash-ledger",
@@ -403,13 +400,6 @@ function Home() {
       <ErrorBoundary fallbackTitle="Client Ledger">
         <Suspense fallback={<LoadingSpinner message="Loading Client Ledger..." />}>
           <ClientLedger onBack={() => setCurrentView('home')} />
-        </Suspense>
-      </ErrorBoundary>
-    ),
-    "client-balances": () => (
-      <ErrorBoundary fallbackTitle="Client Balances">
-        <Suspense fallback={<LoadingSpinner message="Loading Client Balances..." />}>
-          <ClientBalances onBack={() => setCurrentView('home')} />
         </Suspense>
       </ErrorBoundary>
     ),

@@ -31,6 +31,15 @@ const formatINR = (x) => {
   return "₹" + x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 };
 
+const formatBalance = (balance) => {
+  if (balance == null || balance === undefined) return "-";
+  const formatted = Math.abs(balance).toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+  return balance < 0 ? `-₹${formatted}` : `₹${formatted}`;
+};
+
 const CashLedger = ({ onBack }) => {
   const { user } = useAuth();
   const { selectedOrganization: selectedOrg } = useOrganization();
@@ -133,6 +142,55 @@ const CashLedger = ({ onBack }) => {
   const [isApprovalLoading, setIsApprovalLoading] = useState(false);
   const [lastApprovalUpdate, setLastApprovalUpdate] = useState(null);
   const [databaseReadCount, setDatabaseReadCount] = useState(0);
+  const [clientBalances, setClientBalances] = useState({});
+
+  // Fetch client balances for ledger rows
+  const fetchClientBalances = async (rows) => {
+    if (!selectedOrg?.orgID || !rows.length) return;
+    
+    try {
+      // Get unique client names from both orders and transactions
+      const uniqueClientNames = [...new Set(
+        rows
+          .filter(row => row.particulars && row.particulars !== "-")
+          .map(row => row.particulars)
+          .filter(Boolean)
+      )];
+      
+      if (uniqueClientNames.length === 0) return;
+      
+      console.log('🔍 Fetching client balances for:', uniqueClientNames.length, 'clients');
+      
+      // Query clients collection for these client names
+      const clientQueries = uniqueClientNames.map(clientName => 
+        query(
+          collection(db, "CLIENTS"),
+          where("orgID", "==", selectedOrg.orgID),
+          where("name", "==", clientName)
+        )
+      );
+      
+      // Execute all queries in parallel
+      const clientSnapshots = await Promise.all(
+        clientQueries.map(query => getDocs(query))
+      );
+      
+      // Build client balances lookup
+      const newClientBalances = {};
+      clientSnapshots.forEach(snapshot => {
+        snapshot.docs.forEach(doc => {
+          const clientData = doc.data();
+          newClientBalances[clientData.name] = clientData.totalBalance || 0;
+        });
+      });
+      
+      console.log('✅ Client balances fetched for Cash Ledger:', newClientBalances);
+      setClientBalances(newClientBalances);
+      
+    } catch (error) {
+      console.error('❌ Error fetching client balances for Cash Ledger:', error);
+    }
+  };
 
   // Load existing approvals and set up real-time listener
   useEffect(() => {
@@ -255,6 +313,9 @@ const CashLedger = ({ onBack }) => {
       setLedgerRows(allRows);
       setDatabaseReadCount(readCount);
       
+      // Fetch client balances for the ledger rows
+      fetchClientBalances(allRows);
+      
       // Debug log for database reads
       console.log(`📊 CashLedger Database Reads: ${readCount} documents (Orders: ${orders.length}, Transactions: ${transactions.length}, Expenses: ${expenses.length})`);
     };
@@ -359,6 +420,7 @@ const CashLedger = ({ onBack }) => {
                 )}
                 <th>DATE</th>
                 <th>PARTICULARS</th>
+                <th>CLIENT BALANCE</th>
                 <th>EXPENSE</th>
                 <th>INCOME</th>
                 <th>CREDIT</th>
@@ -368,7 +430,7 @@ const CashLedger = ({ onBack }) => {
             <tbody>
               {ledgerRows.length === 0 && (
                 <tr>
-                  <td colSpan={isAdmin ? 7 : 6} className="empty-row">No entries found</td>
+                  <td colSpan={isAdmin ? 8 : 7} className="empty-row">No entries found</td>
                 </tr>
               )}
               {ledgerRows.map((row, index) => (
@@ -398,6 +460,17 @@ const CashLedger = ({ onBack }) => {
                   )}
                   <td>{row.date.toLocaleDateString()}</td>
                   <td>{row.particulars}</td>
+                  <td style={{ 
+                    color: (row.type === "Order" || row.type === "Client Payment") && clientBalances[row.particulars] !== undefined 
+                      ? (clientBalances[row.particulars] < 0 ? "#ff6b6b" : clientBalances[row.particulars] > 0 ? "#51cf66" : "#868e96")
+                      : "#868e96",
+                    fontWeight: (row.type === "Order" || row.type === "Client Payment") && clientBalances[row.particulars] !== undefined ? "bold" : "normal"
+                  }}>
+                    {(row.type === "Order" || row.type === "Client Payment") && clientBalances[row.particulars] !== undefined 
+                      ? formatBalance(clientBalances[row.particulars])
+                      : "-"
+                    }
+                  </td>
                   <td>{row.expense ? formatINR(row.expense) : "-"}</td>
                   <td>{row.income ? formatINR(row.income) : "-"}</td>
                   <td>{row.credit ? formatINR(row.credit) : "-"}</td>
@@ -410,6 +483,7 @@ const CashLedger = ({ onBack }) => {
                 {isAdmin && <td className="footer-checkbox-cell"></td>}
                 <td className="footer-date-cell"></td>
                 <td className="footer-label-cell"><b>Total</b></td>
+                <td className="footer-balance-cell"></td>
                 <td className="footer-value-cell"><b>{formatINR(totalExpense)}</b></td>
                 <td className="footer-value-cell"><b>{formatINR(totalIncome)}</b></td>
                 <td className="footer-value-cell"><b>{formatINR(totalCredit)}</b></td>

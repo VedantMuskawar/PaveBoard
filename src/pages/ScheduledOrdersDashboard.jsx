@@ -766,24 +766,50 @@ const OrderCard = memo(({ order: o, formatTime, actionLoading, setActionLoading,
                       canCancel = true;
                       cancelReason = "direct_match";
                     } else if (dmData.defOrderID === o.defOrderID && dmData.deliveryDate?.seconds === o.deliveryDate?.seconds) {
-                      // Same defOrderID and deliveryDate - this is a related order that shares the same DM
-                      console.log("⚠️ DM orderID mismatch but same defOrderID+deliveryDate:", {
-                        dmOrderID: dmData.orderID,
-                        currentOrderID: o.docID,
-                        defOrderID: o.defOrderID,
-                        dmDefOrderID: dmData.defOrderID
-                      });
+                      // Check if dispatch times are the same (making them truly related orders)
+                      const sameDispatchStart = (dmData.dispatchStart?.seconds === o.dispatchStart?.seconds) || 
+                                              (!dmData.dispatchStart && !o.dispatchStart);
+                      const sameDispatchEnd = (dmData.dispatchEnd?.seconds === o.dispatchEnd?.seconds) || 
+                                            (!dmData.dispatchEnd && !o.dispatchEnd);
                       
-                      // Allow cancellation but warn user about the relationship
-                      const confirmRelated = window.confirm(
-                        `This Delivery Memo #${o.dmNumber} was created for a related order.\n\n` +
-                        `Cancelling it will affect all orders with the same defOrderID (${o.defOrderID}) and delivery date.\n\n` +
-                        `Do you still want to proceed?`
-                      );
-                      
-                      if (confirmRelated) {
+                      if (sameDispatchStart && sameDispatchEnd) {
+                        // Same defOrderID, deliveryDate, and dispatch times - this is a related order that shares the same DM
+                        console.log("⚠️ DM orderID mismatch but same defOrderID+deliveryDate+dispatchTimes:", {
+                          dmOrderID: dmData.orderID,
+                          currentOrderID: o.docID,
+                          defOrderID: o.defOrderID,
+                          dmDefOrderID: dmData.defOrderID,
+                          dmDispatchStart: dmData.dispatchStart,
+                          currentDispatchStart: o.dispatchStart,
+                          dmDispatchEnd: dmData.dispatchEnd,
+                          currentDispatchEnd: o.dispatchEnd
+                        });
+                        
+                        // Allow cancellation but warn user about the relationship
+                        const confirmRelated = window.confirm(
+                          `This Delivery Memo #${o.dmNumber} was created for a related order.\n\n` +
+                          `Cancelling it will affect all orders with the same defOrderID (${o.defOrderID}), delivery date, and dispatch times.\n\n` +
+                          `Do you still want to proceed?`
+                        );
+                        
+                        if (confirmRelated) {
+                          canCancel = true;
+                          cancelReason = "related_order";
+                        }
+                      } else {
+                        // Different dispatch times - these are separate orders, allow cancellation
+                        console.log("ℹ️ Different dispatch times detected - treating as separate orders:", {
+                          dmOrderID: dmData.orderID,
+                          currentOrderID: o.docID,
+                          defOrderID: o.defOrderID,
+                          dmDispatchStart: dmData.dispatchStart,
+                          currentDispatchStart: o.dispatchStart,
+                          dmDispatchEnd: dmData.dispatchEnd,
+                          currentDispatchEnd: o.dispatchEnd
+                        });
+                        
                         canCancel = true;
-                        cancelReason = "related_order";
+                        cancelReason = "separate_order_different_dispatch";
                       }
                     } else if (dmData.orderID === o.defOrderID || (!dmData.defOrderID && dmData.orderID === o.defOrderID)) {
                       // Legacy DM scenario: DM's orderID matches current order's defOrderID

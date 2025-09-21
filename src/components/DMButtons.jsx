@@ -85,6 +85,9 @@ export default function DMButtons({ order, onActionLoading }) {
       }
 
       // Enhanced deduplication checks with transaction-safe generation
+      // Orders are considered duplicates only if they have:
+      // - Same defOrderID + deliveryDate + dispatchStart + dispatchEnd
+      // Orders with different dispatch times are treated as separate orders
       // 1. Check if current SCH_ORDERS already has a dmNumber
       if (order.dmNumber && typeof order.dmNumber === 'number') {
         alert(`This order already has Delivery Memo #${order.dmNumber}.`);

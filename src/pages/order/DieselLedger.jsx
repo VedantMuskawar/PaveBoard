@@ -437,17 +437,19 @@ function EntryFormModal({
   return (
     <div style={{
       position: "fixed",
-      top: "100px",
-      left: "50%",
-      transform: "translateX(-50%)",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
       backgroundColor: "rgba(0, 0, 0, 0.7)",
       zIndex: 9999,
       padding: "1rem",
       backdropFilter: "blur(4px)",
       WebkitBackdropFilter: "blur(4px)",
-      width: "100%",
-      height: "100vh",
-      overflow: "auto"
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      overflowY: "auto"
     }}>
       <div style={{
         background: "linear-gradient(135deg, #1f1f1f 0%, #2a2a2a 100%)",
@@ -462,7 +464,8 @@ function EntryFormModal({
         position: "relative",
         transform: "translateY(0)",
         animation: "modalSlideIn 0.3s ease-out",
-        margin: "auto"
+        display: "flex",
+        flexDirection: "column"
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <h3 style={{ margin: 0, color: "#00c3ff", fontWeight: "bold" }}>
@@ -1756,15 +1759,17 @@ return (
       {showSettleModal && (
         <div style={{
           position: "fixed",
-          top: "100px",
-          left: "50%",
-          transform: "translateX(-50%)",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
           backgroundColor: "rgba(0, 0, 0, 0.6)",
-          zIndex: 1000,
+          zIndex: 9999,
           padding: "1rem",
-          width: "100%",
-          height: "100vh",
-          overflow: "auto"
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          overflowY: "auto"
         }}>
           <div style={{
             background: "#1f1f1f",
@@ -1773,8 +1778,11 @@ return (
             boxShadow: "0 6px 32px rgba(0,0,0,0.45)",
             maxWidth: "600px",
             width: "100%",
+            maxHeight: "90vh",
+            overflowY: "auto",
             color: "#f3f3f3",
-            margin: "auto"
+            display: "flex",
+            flexDirection: "column"
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
               <h3 style={{ color: "#00c3ff", fontWeight: "bold", marginTop: 0 }}>Settle Unpaid Vouchers</h3>

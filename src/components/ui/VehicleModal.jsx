@@ -140,17 +140,19 @@ const VehicleModal = ({
   return (
     <div style={{
       position: "fixed",
-      top: "100px",
-      left: "50%",
-      transform: "translateX(-50%)",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
       backgroundColor: "rgba(0, 0, 0, 0.7)",
       zIndex: 9999,
       padding: "1rem",
       backdropFilter: "blur(4px)",
       WebkitBackdropFilter: "blur(4px)",
-      width: "100%",
-      height: "100vh",
-      overflow: "auto"
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      overflowY: "auto"
     }}>
       <div style={{
         background: "linear-gradient(135deg, #1f1f1f 0%, #2a2a2a 100%)",
@@ -165,7 +167,8 @@ const VehicleModal = ({
         position: "relative",
         transform: "translateY(0)",
         animation: "modalSlideIn 0.3s ease-out",
-        margin: "auto"
+        display: "flex",
+        flexDirection: "column"
       }}>
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>

@@ -31,7 +31,9 @@ const FormModal = ({
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
-    zIndex: 1000
+    zIndex: 9999,
+    padding: "0.5rem",
+    overflowY: "auto"
   };
 
   const contentStyle = {
@@ -40,8 +42,12 @@ const FormModal = ({
     borderRadius: "14px",
     boxShadow: "0 6px 32px rgba(0,0,0,0.45)",
     width: "100%",
+    maxWidth: sizes[size].maxWidth,
+    maxHeight: "90vh",
+    overflowY: "auto",
     color: "#f3f3f3",
-    ...sizes[size]
+    display: "flex",
+    flexDirection: "column"
   };
 
   const headerStyle = {
@@ -76,7 +82,8 @@ const FormModal = ({
     gap: "1rem",
     marginTop: "2rem",
     paddingTop: "1rem",
-    borderTop: "1px solid rgba(255,255,255,0.1)"
+    borderTop: "1px solid rgba(255,255,255,0.1)",
+    flexShrink: 0
   };
 
   const submitButtonStyle = {
@@ -143,8 +150,10 @@ const FormModal = ({
         </div>
 
         {/* Form Content */}
-        <form onSubmit={handleSubmit}>
-          {children}
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+          <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+            {children}
+          </div>
 
           {/* Footer with buttons */}
           <div style={footerStyle}>

@@ -21,6 +21,8 @@ export { default as FilterBar } from './FilterBar';
 export { LoadingState, SkeletonLoader } from './LoadingState';
 export { default as EmptyState } from './EmptyState';
 export { default as ConfirmationModal } from './ConfirmationModal';
+export { default as PositionedModal } from './PositionedModal';
+export { default as PositionedConfirmationModal } from './PositionedConfirmationModal';
 export { default as DateRangeFilter } from './DateRangeFilter';
 export { default as PageLayout } from './PageLayout';
 export { default as ExportButton } from './ExportButton';

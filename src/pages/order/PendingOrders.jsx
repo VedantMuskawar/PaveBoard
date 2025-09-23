@@ -39,7 +39,6 @@ import {
   formatDeliveryDate, 
   calculateDaysUntilDelivery, 
   getDeliveryStatus,
-  getColorClasses
 } from "../../utils/enhancedDeliveryScheduler";
 
 const PendingOrders = ({ onBack }) => {
@@ -57,7 +56,7 @@ const PendingOrders = ({ onBack }) => {
   const [searchText, setSearchText] = useState("");
   const [schedulingData, setSchedulingData] = useState({
     assignedOrders: [],
-    thresholdStats: [],
+    deliveryStats: null,
     totalWeeklyCapacity: 0,
     startDate: null
   });
@@ -65,8 +64,6 @@ const PendingOrders = ({ onBack }) => {
   const [lastCalculated, setLastCalculated] = useState(null);
   const [showDebugInfo, setShowDebugInfo] = useState(false);
 
-  // Configurable quantity thresholds
-  const QUANTITY_THRESHOLDS = [1000, 1500, 2000, 2500, 3000, 4000];
 
   // Fetch pending orders with real-time updates
   useEffect(() => {
@@ -109,7 +106,7 @@ const PendingOrders = ({ onBack }) => {
   useEffect(() => {
     setSchedulingData({
       assignedOrders: pendingOrders,
-      thresholdStats: [],
+      deliveryStats: null,
       totalWeeklyCapacity: 0,
       startDate: null
     });
@@ -183,8 +180,8 @@ const PendingOrders = ({ onBack }) => {
   // Use total weekly capacity from scheduling data
   const totalWeeklyCapacity = schedulingData.totalWeeklyCapacity;
 
-  // Use threshold stats from scheduling data
-  const thresholdStats = schedulingData.thresholdStats;
+  // Use delivery stats from scheduling data
+  const deliveryStats = schedulingData.deliveryStats;
 
   // Manual calculation trigger function
   const handleCalculateDeliveryDates = useCallback(async () => {
@@ -680,57 +677,91 @@ const PendingOrders = ({ onBack }) => {
               )}
             </div>
             
-            {thresholdStats.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {thresholdStats.map((item, index) => {
-                  const colorClasses = getColorClasses(item.color);
-                  return (
-                    <div 
-                      key={index}
-                      style={{
-                        borderRadius: "12px",
-                        padding: "1.5rem",
-                        border: "2px solid",
-                        transition: "all 0.2s ease",
-                        background: colorClasses.background,
-                        borderColor: colorClasses.borderColor
-                      }}
-                    >
-                      <div style={{ textAlign: "center" }}>
-                        <div style={{
-                          fontSize: "1.5rem",
-                          fontWeight: "bold",
-                          marginBottom: "0.5rem",
-                          color: colorClasses.textColor
-                        }}>
-                          {item.range}
-                        </div>
-                        
-                        <div style={{ fontSize: "0.875rem", color: "#d1d5db", marginBottom: "0.25rem" }}>
-                          Pending: {item.totalQuantity.toLocaleString()}
-                        </div>
-                        
-                        <div style={{
-                          fontSize: "1.125rem",
-                          fontWeight: "600",
-                          color: colorClasses.lightTextColor
-                        }}>
-                          ETA: {item.estimatedDays === 0 ? 'N/A' : `${item.estimatedDays} day${item.estimatedDays === 1 ? '' : 's'}`}
-                        </div>
-                        
-                        {item.estimatedDays > 0 && (
-                          <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: "0.25rem" }}>
-                            {totalWeeklyCapacity > 0 ? `Based on ${totalWeeklyCapacity.toLocaleString()} weekly capacity` : 'No active vehicles'}
-                          </div>
-                        )}
-                        
-                        <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: "0.25rem" }}>
-                          {item.orderCount} order{item.orderCount === 1 ? '' : 's'}
-                        </div>
-                      </div>
+            {deliveryStats ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div style={{
+                  borderRadius: "12px",
+                  padding: "1.5rem",
+                  border: "2px solid #10b981",
+                  background: "rgba(16, 185, 129, 0.1)"
+                }}>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{
+                      fontSize: "2rem",
+                      fontWeight: "bold",
+                      marginBottom: "0.5rem",
+                      color: "#10b981"
+                    }}>
+                      {deliveryStats.totalOrderCount}
                     </div>
-                  );
-                })}
+                    <div style={{ fontSize: "0.875rem", color: "#d1d5db" }}>
+                      Total Orders
+                    </div>
+                  </div>
+                </div>
+                
+                <div style={{
+                  borderRadius: "12px",
+                  padding: "1.5rem",
+                  border: "2px solid #3b82f6",
+                  background: "rgba(59, 130, 246, 0.1)"
+                }}>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{
+                      fontSize: "2rem",
+                      fontWeight: "bold",
+                      marginBottom: "0.5rem",
+                      color: "#3b82f6"
+                    }}>
+                      {deliveryStats.totalPendingQuantity.toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: "0.875rem", color: "#d1d5db" }}>
+                      Total Quantity
+                    </div>
+                  </div>
+                </div>
+                
+                <div style={{
+                  borderRadius: "12px",
+                  padding: "1.5rem",
+                  border: "2px solid #f59e0b",
+                  background: "rgba(245, 158, 11, 0.1)"
+                }}>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{
+                      fontSize: "2rem",
+                      fontWeight: "bold",
+                      marginBottom: "0.5rem",
+                      color: "#f59e0b"
+                    }}>
+                      {deliveryStats.totalWeeklyCapacity}
+                    </div>
+                    <div style={{ fontSize: "0.875rem", color: "#d1d5db" }}>
+                      Weekly Capacity
+                    </div>
+                  </div>
+                </div>
+                
+                <div style={{
+                  borderRadius: "12px",
+                  padding: "1.5rem",
+                  border: "2px solid #ef4444",
+                  background: "rgba(239, 68, 68, 0.1)"
+                }}>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{
+                      fontSize: "2rem",
+                      fontWeight: "bold",
+                      marginBottom: "0.5rem",
+                      color: "#ef4444"
+                    }}>
+                      {deliveryStats.estimatedDays || 'N/A'}
+                    </div>
+                    <div style={{ fontSize: "0.875rem", color: "#d1d5db" }}>
+                      Est. Days
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : (
               <div style={{
@@ -745,7 +776,7 @@ const PendingOrders = ({ onBack }) => {
                   No Delivery Estimates Yet
                 </h3>
                 <p style={{ color: "#9ca3af", marginBottom: "1.5rem", fontSize: "0.875rem" }}>
-                  Click the "Calculate Delivery Dates" button to see estimated delivery times by quantity thresholds
+                  Click the "Calculate Delivery Dates" button to see estimated delivery times and scheduling
                 </p>
                 <Button
                   onClick={handleCalculateDeliveryDates}

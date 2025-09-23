@@ -999,7 +999,7 @@ const ProductionEntriesPage = ({ onBack }) => {
       )}
 
       {/* Confirmation Modal */}
-      <ConfirmationModal
+      <PositionedConfirmationModal
         isOpen={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}
         onConfirm={confirmDeleteBatch}
@@ -1007,7 +1007,8 @@ const ProductionEntriesPage = ({ onBack }) => {
         message="Are you sure you want to delete this batch? This will also delete associated wage entries and revert employee balances."
         confirmText="Delete"
         cancelText="Cancel"
-        variant="danger"
+        confirmVariant="danger"
+        icon="⚠️"
       />
     </DieselPage>
   );

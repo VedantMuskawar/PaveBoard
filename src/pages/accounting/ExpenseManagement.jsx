@@ -678,6 +678,8 @@ const ExpensesManagement = ({ onBack }) => {
 
             // 4. Add documents in EMPLOYEE_LEDGER: amount = amount/(splitRule) for each member
             const employeeLedgerPromises = validMembers.map(async ({ memberId, memberData, splitAmount }) => {
+              const splitAmountPaise = EmployeeService.formatMoneyToPaise(splitAmount);
+              
               const employeeLedgerData = {
                 employeeID: memberId,
                 employeeName: memberData.name,

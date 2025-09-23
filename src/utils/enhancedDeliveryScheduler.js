@@ -286,122 +286,37 @@ export const assignOrdersToVehicles = (virtualOrders, vehicles, startDate) => {
 };
 
 /**
- * Calculate quantity threshold statistics
+ * Calculate simple delivery statistics
  * @param {Array} assignedOrders - Orders with assigned vehicles
  * @param {Array} vehicles - Array of active vehicles
- * @param {Array} thresholds - Quantity thresholds [1000, 1500, 2000, 2500, 3000, 4000]
- * @param {Date} startDate - Starting date (tomorrow)
- * @returns {Array} Threshold statistics
+ * @returns {Object} Simple delivery statistics
  */
-export const calculateQuantityThresholdStats = (assignedOrders, vehicles, thresholds = [1000, 1500, 2000, 2500, 3000, 4000], startDate = new Date()) => {
+export const calculateDeliveryStats = (assignedOrders, vehicles) => {
   // Calculate total weekly capacity
   const totalWeeklyCapacity = vehicles.reduce((total, vehicle) => {
     if (!vehicle.weeklyCapacity) return total;
     return total + Object.values(vehicle.weeklyCapacity).reduce((sum, cap) => sum + (cap || 0), 0);
   }, 0);
 
+  // Calculate total pending quantity
+  const totalPendingQuantity = assignedOrders.reduce((total, order) => {
+    return total + (order.productQuant || 0);
+  }, 0);
 
-  if (totalWeeklyCapacity === 0) {
-    return thresholds.map(threshold => ({
-      range: `≤${threshold.toLocaleString()}`,
-      totalQuantity: 0,
-      estimatedDays: 0,
-      color: 'gray',
-      threshold,
-      orderCount: 0
-    }));
-  }
+  // Calculate total order count
+  const totalOrderCount = assignedOrders.length;
 
-  // Group orders by quantity thresholds
-  const thresholdGroups = {};
-  thresholds.forEach(threshold => {
-    thresholdGroups[threshold] = {
-      orders: [],
-      totalQuantity: 0
-    };
-  });
+  // Calculate estimated days based on total capacity
+  const estimatedDays = totalOrderCount > 0 && totalWeeklyCapacity > 0 
+    ? Math.ceil(totalOrderCount / totalWeeklyCapacity) 
+    : 0;
 
-  // No overflow group needed since max order is 4000 bricks
-
-  // Categorize orders
-  assignedOrders.forEach(order => {
-    const quantity = order.productQuant || 0;
-    
-    if (quantity <= 0) return;
-
-    // Find appropriate threshold
-    let assigned = false;
-    for (const threshold of thresholds) {
-      if (quantity <= threshold) {
-        thresholdGroups[threshold].orders.push(order);
-        thresholdGroups[threshold].totalQuantity += quantity;
-        assigned = true;
-        break;
-      }
-    }
-
-    // If no threshold matched, skip the order (shouldn't happen since max is 4000)
-    if (!assigned) {
-      // Order exceeds maximum threshold 4000
-    }
-  });
-
-  // Calculate ETA for each threshold
-  const results = [];
-  
-  // Process regular thresholds
-  thresholds.forEach(threshold => {
-    const group = thresholdGroups[threshold];
-    const totalQuantity = group.totalQuantity;
-    const orderCount = group.orders.length;
-    
-    // Calculate suitable vehicles for this threshold
-    const suitableVehicles = vehicles.filter(vehicle => {
-      const vehicleQuantity = parseInt(vehicle.vehicleQuantity) || 0;
-      return vehicleQuantity === threshold;
-    });
-    
-    // Calculate total daily capacity of all suitable vehicles
-    const totalDailyCapacity = suitableVehicles.reduce((total, vehicle) => {
-      if (!vehicle.weeklyCapacity) return total;
-      // Use maximum daily capacity instead of average for more realistic ETA
-      const maxDailyCapacity = Math.max(...Object.values(vehicle.weeklyCapacity));
-      return total + maxDailyCapacity;
-    }, 0);
-    
-    // ETA = X ÷ Total Daily Capacity
-    // X = orderCount (number of orders)
-    // Total Daily Capacity = sum of all vehicles' maximum daily capacity
-    const estimatedDays = orderCount > 0 && totalDailyCapacity > 0 
-      ? Math.ceil(orderCount / totalDailyCapacity) 
-      : 0;
-    
-    // Determine color based on ETA
-    let color = 'gray';
-    if (estimatedDays > 0) {
-      if (estimatedDays < 3) {
-        color = 'green';
-      } else if (estimatedDays <= 7) {
-        color = 'orange';
-      } else {
-        color = 'red';
-      }
-    }
-
-
-    results.push({
-      range: `≤${threshold.toLocaleString()}`,
-      totalQuantity,
-      estimatedDays,
-      color,
-      threshold,
-      orderCount: group.orders.length
-    });
-  });
-
-  // No overflow group processing needed since max order is 4000 bricks
-
-  return results;
+  return {
+    totalPendingQuantity,
+    totalOrderCount,
+    totalWeeklyCapacity,
+    estimatedDays
+  };
 };
 
 /**
@@ -409,7 +324,7 @@ export const calculateQuantityThresholdStats = (assignedOrders, vehicles, thresh
  * @param {Array} orders - Orders from DEF_ORDERS
  * @param {Array} vehicles - Vehicles from VEHICLE collection
  * @param {Date} startDate - Starting date (default: tomorrow)
- * @returns {Object} { assignedOrders, thresholdStats, totalWeeklyCapacity }
+ * @returns {Object} { assignedOrders, deliveryStats, totalWeeklyCapacity }
  */
 export const scheduleDeliveries = (orders, vehicles, startDate = null) => {
   // Default start date to tomorrow
@@ -443,25 +358,20 @@ export const scheduleDeliveries = (orders, vehicles, startDate = null) => {
   
   console.log('📅 Delivery date distribution:', deliveryDates);
 
-  // Step 3: Calculate quantity threshold statistics
-  const thresholdStats = calculateQuantityThresholdStats(assignedOrders, vehicles, [1000, 1500, 2000, 2500, 3000, 4000], tomorrow);
-
-  // Step 4: Calculate total weekly capacity
-  const totalWeeklyCapacity = vehicles.reduce((total, vehicle) => {
-    if (!vehicle.weeklyCapacity) return total;
-    return total + Object.values(vehicle.weeklyCapacity).reduce((sum, cap) => sum + (cap || 0), 0);
-  }, 0);
+  // Step 3: Calculate simple delivery statistics
+  const deliveryStats = calculateDeliveryStats(assignedOrders, vehicles);
 
   console.log('✅ Scheduling complete:', {
     assignedOrders: assignedOrders.length,
-    totalWeeklyCapacity,
-    thresholdStats: thresholdStats.length
+    totalWeeklyCapacity: deliveryStats.totalWeeklyCapacity,
+    totalPendingQuantity: deliveryStats.totalPendingQuantity,
+    estimatedDays: deliveryStats.estimatedDays
   });
 
   return {
     assignedOrders,
-    thresholdStats,
-    totalWeeklyCapacity,
+    deliveryStats,
+    totalWeeklyCapacity: deliveryStats.totalWeeklyCapacity,
     startDate: tomorrow
   };
 };

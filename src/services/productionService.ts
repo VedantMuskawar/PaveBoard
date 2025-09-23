@@ -138,7 +138,7 @@ export class ProductionService {
       const batchData: Omit<ProductionBatch, "id"> = {
         orgID,
         batchNo: formData.batchNo,
-        date: formData.date,
+        date: new Date(formData.date), // Ensure it's a proper Date object
         cementBags: formData.cementBags,
         productionQuantity: formData.productionQuantity,
         thappiQuantity: formData.thappiQuantity,
@@ -151,7 +151,7 @@ export class ProductionService {
 
       batch.set(batchRef, {
         ...batchData,
-        date: Timestamp.fromDate(formData.date),
+        date: Timestamp.fromDate(new Date(formData.date)),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
@@ -164,7 +164,7 @@ export class ProductionService {
           employeeId: allocation.employeeId,
           employeeName: allocation.employeeName,
           category: "Production",
-          date: formData.date,
+          date: new Date(formData.date), // Ensure it's a proper Date object
           batchId: batchRef.id,
           unitCount: allocation.unitCount,
           wageAmount: allocation.wageAmount,
@@ -174,7 +174,7 @@ export class ProductionService {
 
         batch.set(wageEntryRef, {
           ...wageEntry,
-          date: Timestamp.fromDate(formData.date),
+          date: Timestamp.fromDate(new Date(formData.date)),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
@@ -403,7 +403,7 @@ export class ProductionService {
       const batchRef = doc(db, "production_batches", batchId);
       batch.update(batchRef, {
         batchNo: formData.batchNo,
-        date: Timestamp.fromDate(formData.date),
+        date: Timestamp.fromDate(new Date(formData.date)),
         cementBags: formData.cementBags,
         productionQuantity: formData.productionQuantity,
         thappiQuantity: formData.thappiQuantity,
@@ -426,7 +426,7 @@ export class ProductionService {
           employeeId: allocation.employeeId,
           employeeName: allocation.employeeName,
           category: "Production",
-          date: formData.date,
+          date: new Date(formData.date), // Ensure it's a proper Date object
           batchId: batchId,
           unitCount: allocation.unitCount,
           wageAmount: allocation.wageAmount,
@@ -436,7 +436,7 @@ export class ProductionService {
 
         batch.set(wageEntryRef, {
           ...wageEntry,
-          date: Timestamp.fromDate(formData.date),
+          date: Timestamp.fromDate(new Date(formData.date)),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });

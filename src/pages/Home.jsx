@@ -34,6 +34,7 @@ const ProcurementReport = lazy(() => import("./procurement/ProcurementReport"));
 const VehicleManagement = lazy(() => import("./vehicle operations/VehicleManagement"));
 const VehicleWagesManagement = lazy(() => import("./vehicle operations/VehicleWages"));
 const ScheduledOrdersDashboard = lazy(() => import("./ScheduledOrdersDashboard"));
+const Attendance = lazy(() => import("./Attendance"));
 
 // Loading component for Suspense fallback
 const LoadingSpinner = ({ message = "Loading..." }) => (
@@ -118,6 +119,7 @@ function Home() {
           { emoji: "📊", title: "Vehicle Labour Ledger", path: "/home/v-labour-ledger" },
           { emoji: "👥", title: "Labour Management", path: "/home/manage-labour" },
           { emoji: "📋", title: "Unified Ledger", path: "/home/ledger" },
+          { emoji: "📅", title: "Attendance", path: "/home/attendance" },
         ]
       },
       {
@@ -214,6 +216,7 @@ function Home() {
     "Vehicle Labour Ledger": "vehicle-labour-ledger",
     "Labour Management": "labour-management",
     "Unified Ledger": "ledger",
+    "Attendance": "attendance",
     "Client Ledger": "client-ledger",
     "Income Ledger": "income-ledger",
     "Expense Management": "expense-management",
@@ -396,6 +399,13 @@ function Home() {
         </Suspense>
       </ErrorBoundary>
     ),
+    "attendance": () => (
+      <ErrorBoundary fallbackTitle="Attendance Management">
+        <Suspense fallback={<LoadingSpinner message="Loading Attendance..." />}>
+          <Attendance onBack={() => setCurrentView('home')} />
+        </Suspense>
+      </ErrorBoundary>
+    ),
     "client-ledger": () => (
       <ErrorBoundary fallbackTitle="Client Ledger">
         <Suspense fallback={<LoadingSpinner message="Loading Client Ledger..." />}>
@@ -551,6 +561,7 @@ function Home() {
                  currentView === "vehicle-labour-ledger" ? "📊 Vehicle Labour Ledger" :
                  currentView === "labour-management" ? "👥 Labour Management" :
                  currentView === "ledger" ? "📋 Unified Ledger" :
+                 currentView === "attendance" ? "📅 Attendance" :
                  currentView === "client-ledger" ? "📊 Client Ledger" :
                  currentView === "income-ledger" ? "📈 Income Ledger" :
                  currentView === "expense-management" ? "💸 Expense Management" :

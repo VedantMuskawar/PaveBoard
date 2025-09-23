@@ -1,0 +1,85 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "WAGES_ENTRIES",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "orgID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "employeeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "WAGES_ENTRIES",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "orgID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "employeeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "labourType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "WAGES_ENTRIES",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "orgID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "labourID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "labourType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "ATTENDANCE",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "orgID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "month",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "employeeType",
+          "order": "ASCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

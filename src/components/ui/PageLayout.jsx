@@ -1,5 +1,8 @@
 import React from 'react';
-import { DieselPage, PageHeader, FilterBar, SummaryCard } from './index';
+import DieselPage from './DieselPage';
+import PageHeader from './PageHeader';
+import FilterBar from './FilterBar';
+import SummaryCard from './SummaryCard';
 
 /**
  * PageLayout Component

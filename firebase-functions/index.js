@@ -284,3 +284,350 @@ exports.getSimulationStats = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('internal', 'Failed to get simulation statistics');
   }
 });
+
+// Cloud Function: Calculate Production Attendance
+exports.calculateProductionAttendance = functions.https.onCall(async (data, context) => {
+  // Verify authentication
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+  }
+  
+  const { orgID, month, employeeIds } = data;
+  
+  if (!orgID || !month) {
+    throw new functions.https.HttpsError('invalid-argument', 'Organization ID and month are required');
+  }
+  
+  try {
+    console.log(`Starting Production attendance calculation for org: ${orgID}, month: ${month}`);
+    
+    // Parse month (format: YYYY-MM)
+    const [year, monthNum] = month.split('-');
+    const startDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
+    const endDate = new Date(parseInt(year), parseInt(monthNum), 0); // Last day of month
+    
+    console.log(`Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`);
+    
+    // Get production employees if not specified
+    let targetEmployees = [];
+    if (employeeIds && employeeIds.length > 0) {
+      // Use specific employee IDs
+      for (const empId of employeeIds) {
+        const empDoc = await db.collection('employees').doc(empId).get();
+        if (empDoc.exists) {
+          const empData = empDoc.data();
+          if (empData.employeeTags && empData.employeeTags.includes('production')) {
+            targetEmployees.push({ id: empId, ...empData });
+          }
+        }
+      }
+    } else {
+      // Get all production employees for the organization
+      const employeesSnapshot = await db.collection('employees')
+        .where('orgID', '==', orgID)
+        .where('isActive', '==', true)
+        .get();
+      
+      employeesSnapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.employeeTags && data.employeeTags.includes('production')) {
+          targetEmployees.push({ id: doc.id, ...data });
+        }
+      });
+    }
+    
+    console.log(`Found ${targetEmployees.length} production employees to process`);
+    
+    const results = {
+      processed: 0,
+      errors: [],
+      success: []
+    };
+    
+    // Process each employee
+    for (const employee of targetEmployees) {
+      try {
+        console.log(`Processing employee: ${employee.name} (${employee.labourID})`);
+        
+        // Query WAGES_ENTRIES for this employee in the specified month
+        const wagesSnapshot = await db.collection('WAGES_ENTRIES')
+          .where('orgID', '==', orgID)
+          .where('employeeId', '==', employee.id)
+          .where('date', '>=', admin.firestore.Timestamp.fromDate(startDate))
+          .where('date', '<=', admin.firestore.Timestamp.fromDate(endDate))
+          .get();
+        
+        // Create attendance data object
+        const attendanceData = {};
+        const daysInMonth = endDate.getDate();
+        
+        // Initialize all days as false (absent)
+        for (let day = 1; day <= daysInMonth; day++) {
+          attendanceData[day.toString()] = false;
+        }
+        
+        // Mark days as present if wage entry exists
+        wagesSnapshot.forEach(doc => {
+          const wageData = doc.data();
+          const wageDate = wageData.date.toDate();
+          const dayKey = wageDate.getDate().toString();
+          attendanceData[dayKey] = true;
+        });
+        
+        // Calculate summary
+        const presentDays = Object.values(attendanceData).filter(Boolean).length;
+        const percentage = Math.round((presentDays / daysInMonth) * 100);
+        
+        // Create attendance document
+        const attendanceDocId = `att_${employee.id}_${year}_${monthNum}`;
+        const attendanceData_doc = {
+          orgID: orgID,
+          employeeId: employee.id,
+          employeeName: employee.name,
+          labourID: employee.labourID,
+          month: month,
+          year: parseInt(year),
+          employeeType: 'production',
+          attendanceData: attendanceData,
+          summary: {
+            totalPresent: presentDays,
+            totalDays: daysInMonth,
+            percentage: percentage,
+            workDays: daysInMonth, // Could be enhanced to exclude weekends
+            presentWorkDays: presentDays
+          },
+          calculationMethod: 'auto_wages',
+          calculatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          calculatedBy: context.auth.uid,
+          lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+          sourceData: {
+            wagesEntriesCount: wagesSnapshot.size
+          }
+        };
+        
+        // Store in ATTENDANCE collection
+        await db.collection('ATTENDANCE').doc(attendanceDocId).set(attendanceData_doc);
+        
+        // Update employee summary (last 3 months)
+        const employeeRef = db.collection('employees').doc(employee.id);
+        await employeeRef.update({
+          [`attendanceSummary.${month}`]: {
+            totalPresent: presentDays,
+            totalDays: daysInMonth,
+            percentage: percentage,
+            lastCalculated: admin.firestore.FieldValue.serverTimestamp()
+          },
+          lastAttendanceUpdate: admin.firestore.FieldValue.serverTimestamp()
+        });
+        
+        results.success.push({
+          employeeId: employee.id,
+          employeeName: employee.name,
+          labourID: employee.labourID,
+          presentDays: presentDays,
+          totalDays: daysInMonth,
+          percentage: percentage
+        });
+        
+        results.processed++;
+        
+        console.log(`✅ Processed ${employee.name}: ${presentDays}/${daysInMonth} days (${percentage}%)`);
+        
+      } catch (error) {
+        console.error(`❌ Error processing employee ${employee.name}:`, error);
+        results.errors.push({
+          employeeId: employee.id,
+          employeeName: employee.name,
+          error: error.message
+        });
+      }
+    }
+    
+    console.log(`Production attendance calculation completed. Processed: ${results.processed}, Errors: ${results.errors.length}`);
+    
+    return {
+      success: true,
+      message: `Calculated attendance for ${results.processed} production employees`,
+      results: results
+    };
+    
+  } catch (error) {
+    console.error('Error calculating production attendance:', error);
+    throw new functions.https.HttpsError('internal', `Failed to calculate attendance: ${error.message}`);
+  }
+});
+
+// Cloud Function: Calculate Loaders Attendance
+exports.calculateLoadersAttendance = functions.https.onCall(async (data, context) => {
+  // Verify authentication
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+  }
+  
+  const { orgID, month, employeeIds } = data;
+  
+  if (!orgID || !month) {
+    throw new functions.https.HttpsError('invalid-argument', 'Organization ID and month are required');
+  }
+  
+  try {
+    console.log(`Starting Loaders attendance calculation for org: ${orgID}, month: ${month}`);
+    
+    // Parse month (format: YYYY-MM)
+    const [year, monthNum] = month.split('-');
+    const startDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
+    const endDate = new Date(parseInt(year), parseInt(monthNum), 0); // Last day of month
+    
+    console.log(`Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`);
+    
+    // Get loader employees if not specified
+    let targetEmployees = [];
+    if (employeeIds && employeeIds.length > 0) {
+      // Use specific employee IDs
+      for (const empId of employeeIds) {
+        const empDoc = await db.collection('employees').doc(empId).get();
+        if (empDoc.exists) {
+          const empData = empDoc.data();
+          if (empData.employeeTags && empData.employeeTags.includes('loader')) {
+            targetEmployees.push({ id: empId, ...empData });
+          }
+        }
+      }
+    } else {
+      // Get all loader employees for the organization
+      const employeesSnapshot = await db.collection('employees')
+        .where('orgID', '==', orgID)
+        .where('isActive', '==', true)
+        .get();
+      
+      employeesSnapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.employeeTags && data.employeeTags.includes('loader')) {
+          targetEmployees.push({ id: doc.id, ...data });
+        }
+      });
+    }
+    
+    console.log(`Found ${targetEmployees.length} loader employees to process`);
+    
+    const results = {
+      processed: 0,
+      errors: [],
+      success: []
+    };
+    
+    // Process each employee
+    for (const employee of targetEmployees) {
+      try {
+        console.log(`Processing employee: ${employee.name} (${employee.labourID})`);
+        
+        // Query WAGES_ENTRIES for this employee in the specified month
+        // Filter by labourType: "Loader-Unloader" or similar loader categories
+        const wagesSnapshot = await db.collection('WAGES_ENTRIES')
+          .where('orgID', '==', orgID)
+o          .where('labourID', '==', employee.labourID)
+          .where('labourType', '==', 'Loader-Unloader') // Specific loader type
+          .where('date', '>=', admin.firestore.Timestamp.fromDate(startDate))
+          .where('date', '<=', admin.firestore.Timestamp.fromDate(endDate))
+          .get();
+        
+        // Create attendance data object
+        const attendanceData = {};
+        const daysInMonth = endDate.getDate();
+        
+        // Initialize all days as false (absent)
+        for (let day = 1; day <= daysInMonth; day++) {
+          attendanceData[day.toString()] = false;
+        }
+        
+        // Mark days as present if wage entry exists
+        wagesSnapshot.forEach(doc => {
+          const wageData = doc.data();
+          const wageDate = wageData.date.toDate();
+          const dayKey = wageDate.getDate().toString();
+          attendanceData[dayKey] = true;
+        });
+        
+        // Calculate summary
+        const presentDays = Object.values(attendanceData).filter(Boolean).length;
+        const percentage = Math.round((presentDays / daysInMonth) * 100);
+        
+        // Create attendance document
+        const attendanceDocId = `att_${employee.id}_${year}_${monthNum}`;
+        const attendanceData_doc = {
+          orgID: orgID,
+          employeeId: employee.id,
+          employeeName: employee.name,
+          labourID: employee.labourID,
+          month: month,
+          year: parseInt(year),
+          employeeType: 'loader',
+          attendanceData: attendanceData,
+          summary: {
+            totalPresent: presentDays,
+            totalDays: daysInMonth,
+            percentage: percentage,
+            workDays: daysInMonth, // Could be enhanced to exclude weekends
+            presentWorkDays: presentDays
+          },
+          calculationMethod: 'auto_wages',
+          calculatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          calculatedBy: context.auth.uid,
+          lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+          sourceData: {
+            wagesEntriesCount: wagesSnapshot.size,
+            labourType: 'Loader-Unloader'
+          }
+        };
+        
+        // Store in ATTENDANCE collection
+        await db.collection('ATTENDANCE').doc(attendanceDocId).set(attendanceData_doc);
+        
+        // Update employee summary (last 3 months)
+        const employeeRef = db.collection('employees').doc(employee.id);
+        await employeeRef.update({
+          [`attendanceSummary.${month}`]: {
+            totalPresent: presentDays,
+            totalDays: daysInMonth,
+            percentage: percentage,
+            lastCalculated: admin.firestore.FieldValue.serverTimestamp()
+          },
+          lastAttendanceUpdate: admin.firestore.FieldValue.serverTimestamp()
+        });
+        
+        results.success.push({
+          employeeId: employee.id,
+          employeeName: employee.name,
+          labourID: employee.labourID,
+          presentDays: presentDays,
+          totalDays: daysInMonth,
+          percentage: percentage
+        });
+        
+        results.processed++;
+        
+        console.log(`✅ Processed ${employee.name}: ${presentDays}/${daysInMonth} days (${percentage}%)`);
+        
+      } catch (error) {
+        console.error(`❌ Error processing employee ${employee.name}:`, error);
+        results.errors.push({
+          employeeId: employee.id,
+          employeeName: employee.name,
+          error: error.message
+        });
+      }
+    }
+    
+    console.log(`Loaders attendance calculation completed. Processed: ${results.processed}, Errors: ${results.errors.length}`);
+    
+    return {
+      success: true,
+      message: `Calculated attendance for ${results.processed} loader employees`,
+      results: results
+    };
+    
+  } catch (error) {
+    console.error('Error calculating loaders attendance:', error);
+    throw new functions.https.HttpsError('internal', `Failed to calculate attendance: ${error.message}`);
+  }
+});

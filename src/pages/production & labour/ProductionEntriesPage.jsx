@@ -15,6 +15,7 @@ import {
   LoadingState,
   EmptyState,
   ConfirmationModal,
+  PositionedConfirmationModal,
   DateRangeFilter,
   Badge,
   Divider,

@@ -21,7 +21,7 @@ const appleFontStack = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter,
 
 const VLabourEntry = ({ onBack }) => {
   const navigate = useNavigate();
-  const { selectedOrg } = useOrganization();
+  const { selectedOrganization: selectedOrg } = useOrganization();
   
   // Role-based access control
   const userRole = selectedOrg?.role !== undefined ? Number(selectedOrg.role) : 1;
